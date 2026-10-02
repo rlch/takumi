@@ -2,8 +2,8 @@ mod test_utils;
 
 use std::str::FromStr;
 
-use takumi::prelude::*;
-use test_utils::{block, measure_with_css};
+use takumi::{prelude::*, render};
+use test_utils::{CONTEXT, block, ink_bounds, measure_with_css};
 
 /// A block carrying the `style` object a JS caller would send, so the value
 /// takes the deserializing path rather than the typed builder.
@@ -515,4 +515,82 @@ fn structural_pseudo_classes_skip_text_nodes() {
 
   assert!(widths.contains(&100.0), "{widths:?}");
   assert!(widths.contains(&200.0), "{widths:?}");
+}
+
+/// Tailwind v4's own output for its translate utilities: the registrations,
+/// then the utility that sets one axis and reads both.
+const TAILWIND_TRANSLATE: &str = r#"
+  @property --tw-translate-x { syntax: "*"; inherits: false; initial-value: 0; }
+  @property --tw-translate-y { syntax: "*"; inherits: false; initial-value: 0; }
+  .translate-x-4 {
+    --tw-translate-x: 16px;
+    translate: var(--tw-translate-x) var(--tw-translate-y);
+  }
+"#;
+
+/// The axis the utility leaves unset reads its registered initial value, so the
+/// translate draws instead of failing to substitute.
+#[test]
+fn a_tailwind_translate_reads_the_initial_value_of_the_unset_axis() {
+  let result = measure_with_css(block("translate-x-4"), TAILWIND_TRANSLATE);
+
+  assert_eq!(result.transform[4], 16.0);
+  assert_eq!(result.transform[5], 0.0);
+}
+
+/// A registered value that does not inherit stays on the element that sets it:
+/// its child reads the registered initial value, not the parent's.
+#[test]
+fn a_registered_value_that_does_not_inherit_stops_at_its_element() {
+  let root = Node::container([block("leaf")]).with_class_name("hero");
+  let result = measure_with_css(
+    root,
+    r#"
+      @property --size {
+        syntax: "<length>";
+        inherits: false;
+        initial-value: 30px;
+      }
+      .hero { --size: 70px; display: block; width: var(--size); }
+      .leaf { width: var(--size); }
+    "#,
+  );
+
+  assert_eq!(result.width, 70.0);
+  assert_eq!(result.children[0].width, 30.0);
+}
+
+/// Tailwind v4's `ring-2` builds `box-shadow` from five registered names, four
+/// of which it leaves at their initial `0 0 #0000`; the ring draws only when
+/// every one of them substitutes.
+#[test]
+fn a_tailwind_ring_draws_from_its_registered_initial_values() {
+  let css = r#"
+    @property --tw-shadow { syntax: "*"; inherits: false; initial-value: 0 0 #0000; }
+    @property --tw-inset-shadow { syntax: "*"; inherits: false; initial-value: 0 0 #0000; }
+    @property --tw-ring-shadow { syntax: "*"; inherits: false; initial-value: 0 0 #0000; }
+    @property --tw-inset-ring-shadow { syntax: "*"; inherits: false; initial-value: 0 0 #0000; }
+    @property --tw-ring-offset-shadow { syntax: "*"; inherits: false; initial-value: 0 0 #0000; }
+    @property --tw-ring-offset-width { syntax: "<length>"; inherits: false; initial-value: 0px; }
+    @property --tw-ring-color { syntax: "*"; inherits: false; }
+    @property --tw-ring-inset { syntax: "*"; inherits: false; }
+    .page { display: block; width: 100px; height: 100px; padding: 40px; background: white; }
+    .card { width: 20px; height: 20px; background: white; color: black; }
+    .ring-2 {
+      --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color, currentcolor);
+      box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
+    }
+  "#;
+  let page = Node::container([block("card ring-2")]).with_class_name("page");
+  let image = render(
+    RenderOptions::builder()
+      .viewport(Viewport::new((100, 100)))
+      .node(page)
+      .stylesheet(StyleSheet::parse_loosy(css).into())
+      .fonts(&CONTEXT)
+      .build(),
+  )
+  .unwrap();
+
+  assert_eq!(ink_bounds(&image), (38, 38, 61, 61));
 }
