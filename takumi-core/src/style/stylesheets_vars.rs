@@ -171,7 +171,7 @@ pub(crate) fn apply_deferred_declaration(
     return false;
   };
 
-  let Ok(declarations) = deferred
+  let Some(declarations) = deferred
     .property
     .parse_css_input_declarations(CssInput::Str(Cow::Owned(resolved_value)))
   else {

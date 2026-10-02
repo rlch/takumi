@@ -15,7 +15,7 @@ mod tw;
 pub(crate) use animation::apply_stylesheet_animations;
 pub use animation::{KeyframeRule, KeyframesRule};
 pub(crate) use calc::{CalcArena, parse_calc_number_expression};
-pub(crate) use css_input::{CssInput, CssNumber, CssUnexpected, CssValueSeed};
+pub(crate) use css_input::{CssInput, CssUnexpected, CssValueSeed};
 pub use css_source::{
   AnimationRule, AnimationStep, CssSource, CssSourceError, LayerRule, MediaRule, StyleRule,
   SupportsRule,

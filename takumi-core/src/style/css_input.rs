@@ -21,13 +21,13 @@ impl std::fmt::Display for CssNumber {
 
 #[derive(Clone, Copy)]
 pub(crate) enum CssUnexpected {
-  Bool(bool),
-  Char(char),
+  Bool,
+  Char,
   Bytes,
   Unit,
   Seq,
   Map,
-  Other(&'static str),
+  Null,
 }
 
 #[derive(Clone)]
@@ -108,18 +108,18 @@ impl<'de> Visitor<'de> for CssInputVisitor {
     Ok(CssInput::Number(CssNumber::Float(value)))
   }
 
-  fn visit_bool<E>(self, value: bool) -> Result<Self::Value, E>
+  fn visit_bool<E>(self, _value: bool) -> Result<Self::Value, E>
   where
     E: de::Error,
   {
-    Ok(CssInput::Unexpected(CssUnexpected::Bool(value)))
+    Ok(CssInput::Unexpected(CssUnexpected::Bool))
   }
 
-  fn visit_char<E>(self, value: char) -> Result<Self::Value, E>
+  fn visit_char<E>(self, _value: char) -> Result<Self::Value, E>
   where
     E: de::Error,
   {
-    Ok(CssInput::Unexpected(CssUnexpected::Char(value)))
+    Ok(CssInput::Unexpected(CssUnexpected::Char))
   }
 
   fn visit_bytes<E>(self, _value: &[u8]) -> Result<Self::Value, E>
@@ -147,7 +147,7 @@ impl<'de> Visitor<'de> for CssInputVisitor {
   where
     E: de::Error,
   {
-    Ok(CssInput::Unexpected(CssUnexpected::Other("null")))
+    Ok(CssInput::Unexpected(CssUnexpected::Null))
   }
 
   fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
