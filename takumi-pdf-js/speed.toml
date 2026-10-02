@@ -1,0 +1,66 @@
+# rlch fork: takumi-pdf's wasm is built for speed, not size.
+#
+# The workspace release profile size-optimizes the crates PDF layout and
+# serialization run through (Cargo.toml, `[profile.release.package.*]`), and the
+# upstream build script sets takumi-core to "z" for this package too. That is the
+# right trade for a Worker capped at 3 MB gzip; this fork's takumi-pdf runs in
+# Node, where it costs 1.3-1.6x per document. Every override on the PDF graph is
+# put back to opt-level 3 here, for this build only: `bun run build` passes this
+# file to cargo with `--config`, which takes precedence over the manifest. The
+# other wasm packages (@takumi-rs/wasm, takumi-paint) keep upstream's sizes.
+#
+# The PDFs are byte-identical; the .wasm grows from ~4.4 MB to ~6.3 MB
+# (~1.9 MB to ~2.4 MB gzip), over upstream's 2 MiB Worker ceiling. See FORK.md.
+
+[profile.release.package.takumi-core]
+opt-level = 3
+[profile.release.package.takumi-pdf]
+opt-level = 3
+[profile.release.package.takumi-pdf-wasm]
+opt-level = 3
+[profile.release.package.takumi-bindings-common]
+opt-level = 3
+[profile.release.package.write-fonts]
+opt-level = 3
+[profile.release.package.pdf-writer]
+opt-level = 3
+[profile.release.package.xmp-writer]
+opt-level = 3
+[profile.release.package.harfrust]
+opt-level = 3
+[profile.release.package.unicode-bidi]
+opt-level = 3
+[profile.release.package.taffy]
+opt-level = 3
+[profile.release.package.parley]
+opt-level = 3
+[profile.release.package.fontique]
+opt-level = 3
+[profile.release.package.kurbo]
+opt-level = 3
+[profile.release.package.tiny-skia-path]
+opt-level = 3
+[profile.release.package.read-fonts]
+opt-level = 3
+[profile.release.package.skrifa]
+opt-level = 3
+[profile.release.package.cssparser]
+opt-level = 3
+[profile.release.package.selectors]
+opt-level = 3
+[profile.release.package.roxmltree]
+opt-level = 3
+[profile.release.package.svgtypes]
+opt-level = 3
+[profile.release.package.zune-jpeg]
+opt-level = 3
+[profile.release.package.brotli-decompressor]
+opt-level = 3
+[profile.release.package.wuff]
+opt-level = 3
+[profile.release.package.imagesize]
+opt-level = 3
+[profile.release.package.image]
+opt-level = 3
+[profile.release.package.gif]
+opt-level = 3
