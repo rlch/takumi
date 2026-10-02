@@ -10,7 +10,13 @@ merged. Every fix here is meant to go upstream; drop its commit once it lands.
 - **@property registrations once per stylesheet** (`takumi-core`, `style/custom_properties.rs`):
   registered custom properties are collected once per render and shared, as
   Stylo does, instead of being re-applied on every element. ~13x faster renders
-  with Tailwind v4's 63 registrations, pixels identical.
+  with Tailwind v4's 63 registrations.
+- **An invalid declaration is dropped, not thrown** (`takumi-core`,
+  `style/stylesheets.rs`, `style/css_source.rs`): a style object's or a css rule
+  object's declaration whose value its property does not take (a wrong type, a
+  value that does not parse, one Takumi does not implement such as
+  `contain: strict`) is dropped and the rest applies, as CSS does. Upstream
+  throws and fails the render.
 - **takumi-pdf's wasm is built for speed** (`takumi-pdf-js/speed.toml`): the
   release profile's size overrides on the PDF graph go back to opt-level 3 for
   this build only, and the release builds std without `optimize_for_size`.
@@ -21,8 +27,24 @@ merged. Every fix here is meant to go upstream; drop its commit once it lands.
 - **Release pipeline** (`.github/workflows/rlch-release.yml`,
   `scripts/rlch-version.sh`, `scripts/rlch-pack.sh`): ci.yml's build jobs, on a
   tag, for the targets schools-ts runs on (darwin-arm64, linux-arm64-gnu,
-  linux-x64-gnu), packed as npm tarballs onto a GitHub Release. Nothing is
-  published to npm.
+  linux-x64-gnu), packed as npm tarballs onto a GitHub Release.
+
+## The npm packages
+
+Each package is published under the `@rlch` scope, and each dependency on
+another is an npm alias that installs it under its upstream name (the code
+imports `@takumi-rs/core`; napi's loader requires `@takumi-rs/core-<platform>`):
+
+| upstream                     | on npm                         |
+| ---------------------------- | ------------------------------ |
+| `takumi-js`                  | `@rlch/takumi-js`              |
+| `takumi-pdf`                 | `@rlch/takumi-pdf`             |
+| `@takumi-rs/core`            | `@rlch/takumi-core`            |
+| `@takumi-rs/core-<platform>` | `@rlch/takumi-core-<platform>` |
+| `@takumi-rs/helpers`         | `@rlch/takumi-helpers`         |
+| `@takumi-rs/wasm`            | `@rlch/takumi-wasm`            |
+
+A consumer depends on `"takumi-js": "npm:@rlch/takumi-js@<version>"`.
 
 ## Sync with upstream
 
@@ -42,10 +64,17 @@ The tag is the takumi line's version on `rlch` (`takumi-js/package.json`) plus
 `0.15.0` ships as `0.15.0-rlch.<n>`).
 
 ```sh
-git tag v2.14.0-rlch.2 rlch && git push origin v2.14.0-rlch.2
+git tag v2.14.0-rlch.3 rlch && git push origin v2.14.0-rlch.3
 gh run watch -R rlch/takumi            # rlch release: builds, packs, releases
 ```
 
-The release lists each `.tgz` with its npm integrity. In schools-ts, point the
-`overrides` in `pnpm-workspace.yaml` at the new tag's assets and run
-`pnpm install` to re-pin the lockfile.
+Then publish the release's tarballs, as the npm account `rlch`:
+
+```sh
+gh release download v2.14.0-rlch.3 -R rlch/takumi -D release
+for f in release/*.tgz; do npm publish "$f" --access public --tag rlch; done
+```
+
+(`--tag rlch` keeps `latest` free.) In schools-ts, change the versions in
+`pnpm-workspace.yaml`'s `overrides` and the `package.json`s that name a takumi
+package, and run `pnpm install`.
