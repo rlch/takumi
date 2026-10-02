@@ -357,14 +357,6 @@ macro_rules! define_style {
           Ok(smallvec![declaration])
         }
 
-        const EXPECT_INFO: [(CssExpectedMessage, &'static [&'static str]); Self::COUNT] = [
-          $((<$longhand_ty as FromCss>::EXPECT_MESSAGE, <$longhand_ty as FromCss>::VALID_TOKENS),)*
-          $((<$transient_ty as FromCss>::EXPECT_MESSAGE, <$transient_ty as FromCss>::VALID_TOKENS),)*
-        ];
-
-        fn expect_info(self) -> (CssExpectedMessage, &'static [&'static str]) {
-          Self::EXPECT_INFO[self.index()]
-        }
       }
 
       impl ShorthandId {
@@ -381,16 +373,7 @@ macro_rules! define_style {
           }
         }
 
-        const EXPECT_INFO: [(CssExpectedMessage, &'static [&'static str]);
-          [$(Self::[<$shorthand:camel>]),*].len()] = [
-          $((<$shorthand_ty as FromCss>::EXPECT_MESSAGE, <$shorthand_ty as FromCss>::VALID_TOKENS),)*
-        ];
-
-        fn expect_info(self) -> (CssExpectedMessage, &'static [&'static str]) {
-          Self::EXPECT_INFO[self as usize]
-        }
-
-        const SNAKE_NAMES: [&'static str; Self::EXPECT_INFO.len()] =
+        const SNAKE_NAMES: [&'static str; [$(Self::[<$shorthand:camel>]),*].len()] =
           [$(stringify!($shorthand),)*];
 
         /// The property's CSS name, e.g. `border-radius`.
@@ -484,33 +467,36 @@ macro_rules! define_style {
           }
         }
 
-        pub(crate) fn parse_css_input_declarations<'de>(
+        /// The declarations a value written for this property stands for, or
+        /// `None` when the property does not take it.
+        pub(crate) fn parse_css_input_declarations(
           self,
-          css_input: CssInput<'de>,
-        ) -> Result<ParsedDeclarations, CssInputParseError<'de>> {
+          css_input: CssInput<'_>,
+        ) -> Option<ParsedDeclarations> {
           debug_assert!(
             !matches!(self, Self::Custom),
             "custom properties should be handled before parse_css_input_declarations",
           );
 
-          let css_string = match &css_input {
-            CssInput::Str(value) => Some(value.as_ref()),
-            CssInput::Number(_) | CssInput::Unexpected(_) => None,
+          let source: Cow<'_, str> = match &css_input {
+            CssInput::Str(value) => Cow::Borrowed(value.as_ref()),
+            CssInput::Number(number) => Cow::Owned(number.to_string()),
+            CssInput::Unexpected(_) => return None,
           };
 
-          if css_string.is_some_and(contains_var_function) {
-            return Ok(smallvec![StyleDeclaration::Deferred(DeferredDeclaration {
+          if contains_var_function(&source) {
+            return Some(smallvec![StyleDeclaration::Deferred(DeferredDeclaration {
               property: self,
-              specified_value: css_input.into_string(),
+              specified_value: source.into_owned(),
             })]);
           }
 
           if matches!(self, Self::Ignored | Self::Custom) {
-            return Ok(ParsedDeclarations::new());
+            return Some(ParsedDeclarations::new());
           }
 
           if let Some(keyword) = CssWideKeyword::from_css_input(&css_input) {
-            return Ok(
+            return Some(
               self
                 .target_longhands()
                 .iter()
@@ -519,52 +505,18 @@ macro_rules! define_style {
             );
           }
 
-          if let CssInput::Unexpected(unexpected) = css_input {
-            return Err(CssInputParseError::UnexpectedType {
-              unexpected,
-              expected: self.expected_message("input").into(),
-            });
-          }
+          let mut parser_input = ParserInput::new(&source);
+          let mut parser = Parser::new(&mut parser_input);
 
-          let source: Cow<'_, str> = match &css_input {
-            CssInput::Str(value) => Cow::Borrowed(value.as_ref()),
-            CssInput::Number(number) => Cow::Owned(number.to_string()),
-            CssInput::Unexpected(_) => unreachable!(),
-          };
-
-          let result = {
-            let mut parser_input = ParserInput::new(&source);
-            let mut parser = Parser::new(&mut parser_input);
-
-            // `parse_entirely`, because a declaration list drops a value with
-            // anything left over and a lone value has no `;` to stop at.
-            parser.parse_entirely(|parser| match self {
+          // `parse_entirely`, because a declaration list drops a value with
+          // anything left over and a lone value has no `;` to stop at.
+          parser
+            .parse_entirely(|parser| match self {
               Self::Shorthand(property) => property.parse_declarations(parser),
               Self::Longhand(property) => property.parse_declarations(parser),
               Self::Ignored | Self::Custom => unreachable!(),
             })
-          }
-          .map_err(|error| {
-            (
-              self.expected_message(&source),
-              CssInputParseFailure::new(&source, error),
-            )
-          });
-
-          drop(source);
-
-          result.map_err(|(expected, failure)| CssInputParseError::new(css_input, expected, failure))
-        }
-
-        /// Parse-error "expected ..." text for this property's value type.
-        fn expected_message(self, token: &str) -> String {
-          let (message, valid_tokens) = match self {
-            Self::Longhand(property) => property.expect_info(),
-            Self::Shorthand(property) => property.expect_info(),
-            Self::Ignored | Self::Custom => return String::new(),
-          };
-
-          message.build_message(token, merge_enum_values(valid_tokens))
+            .ok()
         }
 
         /// Longhands this property expands into (shorthand-expansion targets; unrelated to `!important`).
@@ -631,16 +583,12 @@ macro_rules! define_style {
                       important,
                     );
                   }
-                } else {
-                  style
-                    .declarations
-                    .append_parsed_declarations(
-                      property
-                        .parse_css_input_declarations(css_input)
-                        .map_err(|error| error.into_serde_error(&key))?,
-                      important,
-                    );
+                } else if let Some(declarations) = property.parse_css_input_declarations(css_input) {
+                  style.declarations.append_parsed_declarations(declarations, important);
                 }
+                // A value the property does not take is dropped, as CSS drops an
+                // invalid declaration (css-syntax-3 § 8): the rest of the style,
+                // and the render, go on without it.
               }
 
               Ok(style)

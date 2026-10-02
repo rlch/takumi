@@ -61,18 +61,6 @@ fn parse_declarations_is_err(name: &str, css: &str) -> bool {
   StyleDeclarationBlock::parse(name, &mut parser).is_err()
 }
 
-/// `flex-basis` accepts everything `width` does, so its diagnostics must list
-/// the sizing keywords too.
-#[test]
-fn flex_basis_diagnostics_list_the_sizing_keywords() {
-  let error = from_value::<Style>(json!({ "flexBasis": "nope" }))
-    .unwrap_err()
-    .to_string();
-
-  assert!(error.contains("'min-content'"), "{error}");
-  assert!(error.contains("'content'"), "{error}");
-}
-
 fn inherited_style_from_pairs(
   declarations: impl IntoIterator<Item = (&'static str, &'static str)>,
   parent: &ComputedStyle,
@@ -147,13 +135,40 @@ fn importance_split(value: serde_json::Value) -> Result<(usize, usize), serde_js
   Ok((normal.declarations.len(), important.declarations.len()))
 }
 
-/// A `style` object is hand-written, so a value the parser cannot read to its
-/// end is an error rather than a truncated declaration.
+/// A value the parser cannot read to its end is not a truncated declaration:
+/// it is dropped, with every other value the property does not take, as CSS
+/// drops an invalid declaration, and the rest of the style stands.
 #[test]
-fn an_inline_value_parses_entirely() {
-  assert!(from_value::<Style>(json!({ "width": "55px" })).is_ok());
-  assert!(from_value::<Style>(json!({ "width": "55px zzz" })).is_err());
-  assert!(from_value::<Style>(json!({ "width": "55px 99px" })).is_err());
+fn an_invalid_inline_value_is_dropped() -> Result<(), serde_json::Error> {
+  for invalid in [
+    json!("55px zzz"),
+    json!("55px 99px"),
+    json!("wider"),
+    json!(true),
+    json!([]),
+    json!({ "top": null }),
+  ] {
+    let style = from_value::<Style>(json!({ "width": invalid, "opacity": 0.3 }))?;
+    let computed = style.inherit(&ComputedStyle::default());
+
+    assert_eq!(computed.width, ComputedStyle::default().width, "{invalid}");
+    assert_eq!(computed.opacity, PercentageNumber(0.3), "{invalid}");
+  }
+
+  assert_eq!(
+    from_value::<Style>(json!({ "width": "55px" }))?
+      .declarations
+      .len(),
+    1
+  );
+
+  // A value the property is not implemented for is dropped the same way:
+  // `contain` takes no size containment (css-contain-2 § 6, partial support).
+  for unsupported in ["strict", "size layout"] {
+    let style = from_value::<Style>(json!({ "contain": unsupported, "width": "55px" }))?;
+    assert_eq!(style.declarations.len(), 1, "{unsupported}");
+  }
+  Ok(())
 }
 
 #[test]
@@ -193,7 +208,7 @@ fn inline_important_reads_as_a_token() -> Result<(), serde_json::Error> {
     importance_split(json!({ "content": "\"a\" !important" }))?,
     (0, 1)
   );
-  assert!(from_value::<Style>(json!({ "width": "55px !nope" })).is_err());
+  assert_eq!(importance_split(json!({ "width": "55px !nope" }))?, (0, 0));
   Ok(())
 }
 

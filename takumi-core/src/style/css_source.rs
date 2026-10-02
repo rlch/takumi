@@ -165,22 +165,12 @@ pub enum CssSourceError {
     /// The prelude as written.
     value: String,
   },
-  /// A declaration value is not a value for its property.
-  Declaration {
-    /// The property the value was written for.
-    name: String,
-    /// The value as written.
-    value: String,
-  },
 }
 
 impl std::fmt::Display for CssSourceError {
   fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       Self::Prelude { rule, value } => write!(formatter, "invalid {rule} {value:?}"),
-      Self::Declaration { name, value } => {
-        write!(formatter, "invalid value for {name}: {value:?}")
-      }
     }
   }
 }
@@ -329,7 +319,7 @@ impl AnimationStep {
     })?;
 
     let _ = write!(css, "{}{{", self.offset);
-    self.style.write_css(css)?;
+    self.style.write_css(css);
     css.push('}');
     Ok(())
   }
@@ -342,10 +332,10 @@ impl StyleRule {
         .map(|_| ())
     })?;
 
-    // The selector and every value are checked before they are written, so the
+    // The selector is checked and every value parsed before it is written, so the
     // text cannot carry a declaration or a rule the object did not name.
     let _ = write!(css, "{}{{", self.selector);
-    self.style.write_css(css)?;
+    self.style.write_css(css);
 
     for nested in &self.rules {
       nested.write_css(css)?;
@@ -357,30 +347,29 @@ impl StyleRule {
 }
 
 impl Declarations {
-  fn write_css(&self, css: &mut String) -> Result<(), CssSourceError> {
+  fn write_css(&self, css: &mut String) {
     for declaration in &self.0 {
-      declaration.write_css(css)?;
+      declaration.write_css(css);
     }
-
-    Ok(())
   }
 }
 
 impl Declaration {
-  fn write_css(&self, css: &mut String) -> Result<(), CssSourceError> {
+  /// Writes the declaration, or nothing when its property does not take its
+  /// value: CSS drops an invalid declaration, and a value that does not parse
+  /// entirely can never reach the text to close it and open another.
+  fn write_css(&self, css: &mut String) {
     let property = PropertyId::from_camel_case(&self.name);
 
-    if !matches!(property, PropertyId::Ignored | PropertyId::Custom) {
-      property
+    if !matches!(property, PropertyId::Ignored | PropertyId::Custom)
+      && property
         .parse_css_input_declarations(CssInput::Str(self.value.as_str().into()))
-        .map_err(|_| CssSourceError::Declaration {
-          name: self.name.clone(),
-          value: self.value.clone(),
-        })?;
+        .is_none()
+    {
+      return;
     }
 
     let _ = write!(css, "{}:{};", self.css_name(), self.value);
-    Ok(())
   }
 
   /// The CSS spelling of a property name written in camelCase.
@@ -447,15 +436,15 @@ mod tests {
   }
 
   /// A value cannot close its declaration and open another, because it has to
-  /// parse entirely as a value for its own property first.
+  /// parse entirely as a value for its own property first; one that does not is
+  /// dropped, as CSS drops an invalid declaration, and the rule keeps the rest.
   #[test]
   fn a_value_cannot_carry_a_second_declaration() {
     assert_eq!(
-      css(json!({ "selector": ".card", "style": { "color": "red; width: 999px" } })),
-      Err(CssSourceError::Declaration {
-        name: "color".into(),
-        value: "red; width: 999px".into(),
-      })
+      css(
+        json!({ "selector": ".card", "style": { "color": "red; width: 999px", "width": "1px" } })
+      ),
+      Ok(".card{width:1px;}".into())
     );
   }
 

@@ -1,119 +1,9 @@
-use std::{borrow::Cow, fmt::Write};
+use std::borrow::Cow;
 
-use cssparser::{
-  Delimiter, ParseError, Parser, ParserInput, SourceLocation, Token, parse_important,
-};
+use cssparser::{Delimiter, ParseError, Parser, ParserInput, Token, parse_important};
 
 use super::{LonghandId, ParsedDeclarations, PropertyId, ShorthandId};
-use crate::style::{CssInput, CssNumber, CssUnexpected, CssWideKeyword, FromCss};
-
-#[derive(Debug, Clone)]
-pub(crate) struct CssInputParseFailure {
-  location: SourceLocation,
-  detail: Option<String>,
-}
-
-pub(crate) enum CssInputParseError<'de> {
-  Value {
-    value: Cow<'de, str>,
-    expected: Cow<'static, str>,
-    failure: Option<CssInputParseFailure>,
-  },
-  NumberType {
-    number: CssNumber,
-    expected: Cow<'static, str>,
-  },
-  UnexpectedType {
-    unexpected: CssUnexpected,
-    expected: Cow<'static, str>,
-  },
-}
-
-impl<'de> CssInputParseError<'de> {
-  pub(crate) fn new(
-    css_input: CssInput<'de>,
-    expected: String,
-    failure: CssInputParseFailure,
-  ) -> Self {
-    match css_input {
-      CssInput::Str(value) => Self::Value {
-        value,
-        expected: expected.into(),
-        failure: Some(failure),
-      },
-      CssInput::Number(number) => Self::NumberType {
-        number,
-        expected: expected.into(),
-      },
-      CssInput::Unexpected(unexpected) => Self::UnexpectedType {
-        unexpected,
-        expected: expected.into(),
-      },
-    }
-  }
-
-  pub(crate) fn into_serde_error<E>(self, property_name: &str) -> E
-  where
-    E: serde::de::Error,
-  {
-    E::custom(self.message(property_name))
-  }
-
-  fn message(&self, property_name: &str) -> String {
-    let mut message = String::new();
-    let value_kind = match self {
-      Self::Value { .. } => "value",
-      Self::NumberType { .. } | Self::UnexpectedType { .. } => "type",
-    };
-    let _ = write!(message, "invalid {} for {}", value_kind, property_name);
-
-    if let Self::Value { failure, .. } = self
-      && let Some(failure) = failure
-    {
-      let _ = write!(
-        message,
-        ", line {}, column {}",
-        failure.location.line + 1,
-        failure.location.column
-      );
-      if let Some(detail) = &failure.detail {
-        let _ = write!(message, " near \"{}\"", detail);
-      }
-    }
-
-    let input_description = match self {
-      Self::Value { value, .. } => format!("string {:?}", value),
-      Self::NumberType { number, .. } => match number {
-        CssNumber::Signed(value) => format!("integer `{value}`"),
-        CssNumber::Unsigned(value) => format!("integer `{value}`"),
-        CssNumber::Float(value) => format!("float `{value}`"),
-      },
-      Self::UnexpectedType { unexpected, .. } => match unexpected {
-        CssUnexpected::Bool(value) => format!("boolean `{value}`"),
-        CssUnexpected::Char(value) => format!("char `{value}`"),
-        CssUnexpected::Bytes => "bytes".to_owned(),
-        CssUnexpected::Unit => "unit".to_owned(),
-        CssUnexpected::Seq => "sequence".to_owned(),
-        CssUnexpected::Map => "map".to_owned(),
-        CssUnexpected::Other(kind) => (*kind).to_owned(),
-      },
-    };
-
-    let expected = match self {
-      Self::Value { expected, .. }
-      | Self::NumberType { expected, .. }
-      | Self::UnexpectedType { expected, .. } => expected,
-    };
-
-    let _ = write!(
-      message,
-      ": {}; {}; also accepts 'initial', 'unset' or 'inherit'.",
-      input_description, expected
-    );
-
-    message
-  }
-}
+use crate::style::{CssInput, CssWideKeyword, FromCss};
 
 impl CssWideKeyword {
   /// The keyword a string input spells, if any.
@@ -125,31 +15,6 @@ impl CssWideKeyword {
     let mut parser = Parser::new(&mut parser_input);
 
     Self::from_css(&mut parser).ok()
-  }
-}
-
-impl CssInputParseFailure {
-  /// Where `error` stopped reading `source`, with the word it stopped at.
-  pub(crate) fn new(source: &str, error: ParseError<'_, Cow<'_, str>>) -> Self {
-    let location = error.location;
-    let detail = source
-      .char_indices()
-      .nth(location.column.saturating_sub(1) as usize)
-      .map(|(start, _)| {
-        source[start..]
-          .trim_start()
-          .split([' ', '\t', '\n', '\r', ',', ')', '('])
-          .next()
-          .unwrap_or_default()
-          .trim_matches('"')
-          .trim_matches('\'')
-          .chars()
-          .take(24)
-          .collect::<String>()
-      })
-      .filter(|snippet| !snippet.is_empty());
-
-    Self { location, detail }
   }
 }
 
