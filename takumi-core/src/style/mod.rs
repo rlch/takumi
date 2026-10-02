@@ -21,6 +21,7 @@ pub use css_source::{
   SupportsRule,
 };
 pub use custom_properties::CustomProperties;
+pub(crate) use custom_properties::{Registrations, collect_registrations};
 pub(crate) use math::lerp;
 pub(crate) use properties::unexpected_token;
 pub use properties::*;

@@ -36,11 +36,10 @@ use crate::{
   sort_key::sort_by_key,
   style::{
     Affine, BackgroundImage, BackgroundImages, Color, ComputedStyle, ContentItem, ContentValue,
-    Display, Float, GridPlacement, Length, LineHeight, ListStylePosition, Position, SizingContext,
-    Style as NodeStyle, StyleDeclaration, StyleDeclarationBlock, StyleSheet, TextWrapMode,
+    Display, Float, GridPlacement, Length, LineHeight, ListStylePosition, Position, Registrations,
+    SizingContext, Style as NodeStyle, StyleDeclaration, StyleDeclarationBlock, TextWrapMode,
     TwBlocks, WhiteSpaceCollapse, apply_stylesheet_animations,
   },
-  viewport::Viewport,
 };
 
 /// A render-tree child paired with its layout node id.
@@ -322,35 +321,25 @@ struct ElementImportant {
   inline: Option<StyleDeclarationBlock>,
 }
 
-fn registered_custom_property_parent_style<'a>(
+/// `parent_style` with `registrations` in scope, as the child inherits it. The
+/// registrations are collected once per render, so below the root this is a
+/// pointer check and borrows the parent.
+fn with_registrations<'a>(
   parent_style: &'a ComputedStyle,
-  stylesheets: &[StyleSheet],
-  viewport: Viewport,
+  registrations: &Registrations,
 ) -> Cow<'a, ComputedStyle> {
-  if stylesheets
-    .iter()
-    .all(|sheet| sheet.property_rules().is_empty())
+  if registrations.is_empty()
+    || parent_style
+      .custom_properties
+      .has_registrations(registrations)
   {
     return Cow::Borrowed(parent_style);
   }
 
   let mut adjusted_parent = parent_style.clone();
-
-  for sheet in stylesheets {
-    for property_rule in sheet.property_rules() {
-      if !property_rule
-        .media_queries
-        .iter()
-        .all(|media_query| media_query.matches(viewport))
-      {
-        continue;
-      }
-
-      adjusted_parent
-        .custom_properties
-        .register_in_scope(property_rule, &parent_style.custom_properties);
-    }
-  }
+  adjusted_parent
+    .custom_properties
+    .adopt_registrations(registrations);
 
   Cow::Owned(adjusted_parent)
 }
@@ -2607,11 +2596,7 @@ impl RenderContext {
 
   /// This style as a child inherits it, with the stylesheet's registered custom properties.
   fn inherited_style(&self) -> Cow<'_, ComputedStyle> {
-    registered_custom_property_parent_style(
-      &self.style,
-      slice::from_ref(self.stylesheet().as_ref()),
-      self.sizing.viewport,
-    )
+    with_registrations(&self.style, self.custom_property_registrations())
   }
 
   /// Resolves a generated box's style and sizing from its matched declarations.
@@ -2774,18 +2759,31 @@ mod tests {
 
   use taffy::NodeId as TaffyNodeId;
 
-  use super::{
-    NodeOrigin, RenderNode, registered_custom_property_parent_style, sort_children_by_order,
-  };
+  use std::borrow::Cow;
+
+  use super::{NodeOrigin, RenderNode, sort_children_by_order, with_registrations};
   use crate::{
     context::RenderContext,
     resources::font::Fonts,
     style::{
       ComputedStyle, Length, PropertyRule, SizingContext, Style, StyleDeclaration,
-      StyleDeclarationBlock, StyleSheet,
+      StyleDeclarationBlock, StyleSheet, collect_registrations,
     },
     viewport::Viewport,
   };
+
+  /// The parent a child inherits from under `stylesheets`' registrations.
+  fn registered_custom_property_parent_style<'a>(
+    parent: &'a ComputedStyle,
+    stylesheets: &[StyleSheet],
+    viewport: Viewport,
+  ) -> Cow<'a, ComputedStyle> {
+    let registrations = collect_registrations(
+      stylesheets.iter().flat_map(StyleSheet::property_rules),
+      viewport,
+    );
+    with_registrations(parent, &registrations)
+  }
 
   fn parse_stylesheet(css: &str) -> StyleSheet {
     let result = StyleSheet::parse(css);

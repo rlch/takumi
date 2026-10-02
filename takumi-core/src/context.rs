@@ -15,7 +15,8 @@ use crate::{
     image::ImageSource,
   },
   style::{
-    Affine, AppliedTextDecorations, Color, ComputedStyle, SizingContext, StyleSheet, TwCache,
+    Affine, AppliedTextDecorations, Color, ComputedStyle, Registrations, SizingContext, StyleSheet,
+    TwCache, collect_registrations,
   },
 };
 
@@ -24,6 +25,8 @@ struct RenderShared {
   fonts: FontsSnapshot,
   images: Rc<HashMap<Arc<str>, ImageSource>>,
   stylesheet: Arc<StyleSheet>,
+  /// The stylesheet's `@property` registrations, collected once per render.
+  custom_property_registrations: OnceCell<Registrations>,
   inline_cache: InlineLayoutCache,
   tw_cache: TwCache,
   primary_font_metrics: RefCell<HashMap<u64, Option<PrimaryFontMetrics>>>,
@@ -72,6 +75,7 @@ impl From<RenderContextInit> for RenderContext {
         fonts: init.fonts,
         images: init.images,
         stylesheet: init.stylesheet,
+        custom_property_registrations: OnceCell::new(),
         inline_cache: InlineLayoutCache::new(init.shape_cache, init.measure_cache),
         tw_cache: TwCache::default(),
         primary_font_metrics: RefCell::new(HashMap::new()),
@@ -158,6 +162,14 @@ impl RenderContext {
   /// The stylesheets to apply before layout/rendering.
   pub(crate) fn stylesheet(&self) -> &Arc<StyleSheet> {
     &self.shared.stylesheet
+  }
+
+  /// The stylesheet's `@property` registrations whose media queries match the
+  /// viewport, shared by every element of the render as Stylo's registry is.
+  pub(crate) fn custom_property_registrations(&self) -> &Registrations {
+    self.shared.custom_property_registrations.get_or_init(|| {
+      collect_registrations(self.stylesheet().property_rules(), self.sizing.viewport)
+    })
   }
 
   pub(crate) fn inline_cache(&self) -> &InlineLayoutCache {
