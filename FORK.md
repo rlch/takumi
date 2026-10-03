@@ -17,6 +17,12 @@ merged. Every fix here is meant to go upstream; drop its commit once it lands.
   value that does not parse, one Takumi does not implement such as
   `contain: strict`) is dropped and the rest applies, as CSS does. Upstream
   throws and fails the render.
+- **A scaled box paints from its rounded paint offset** (`takumi-core`,
+  `scene.rs`, `style/stylesheets_query.rs`): the fraction of a transformed
+  box's position that Blink's paint offset translation drops no longer moves
+  its device space, so a picture under `scale()` at a fractional position
+  draws on the pixel grid instead of a fraction off and blurred. Regressed
+  upstream in #1780.
 - **takumi-pdf's wasm is built for speed** (`takumi-pdf-js/speed.toml`): the
   release profile's size overrides on the PDF graph go back to opt-level 3 for
   this build only, and the release builds std without `optimize_for_size`.
