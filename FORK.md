@@ -45,7 +45,8 @@ merged. Every fix here is meant to go upstream; drop its commit once it lands.
 - **Release pipeline** (`.github/workflows/rlch-release.yml`,
   `scripts/rlch-version.sh`, `scripts/rlch-pack.sh`): ci.yml's build jobs, on a
   tag, for the targets schools-ts runs on (darwin-arm64, linux-arm64-gnu,
-  linux-x64-gnu), packed as npm tarballs onto a GitHub Release.
+  linux-x64-gnu), packed as npm tarballs onto a GitHub Release, then published
+  to npm by trusted publishing (OIDC): no npm token exists anywhere.
 
 ## The npm packages
 
@@ -83,15 +84,28 @@ The tag is the takumi line's version on `rlch` (`takumi-js/package.json`) plus
 
 ```sh
 git tag v2.14.0-rlch.3 rlch && git push origin v2.14.0-rlch.3
-gh run watch -R rlch/takumi            # rlch release: builds, packs, releases
+gh run watch -R rlch/takumi            # rlch release: builds, packs, releases, publishes
 ```
 
-Then publish the release's tarballs, as the npm account `rlch`:
+The `publish` job (environment `npm`) downloads the release's tarballs and runs
+`npm publish <tgz> --access public --tag rlch` for each, platform packages
+first, with the job's GitHub OIDC token: npm's trusted publishing, provenance
+included. Nobody publishes by hand. The GitHub environment `npm` admits
+only `v*-rlch.*` tags, so no branch run can reach it.
 
-```sh
-gh release download v2.14.0-rlch.3 -R rlch/takumi -D release
-for f in release/*.tgz; do npm publish "$f" --access public --tag rlch; done
-```
+Each of the 8 packages trusts exactly this: owner `rlch`, repository `takumi`,
+workflow `rlch-release.yml`, environment `npm` (npmjs.com › the package ›
+Settings › Trusted Publisher, or `npm trust github <pkg> --repo rlch/takumi
+--file rlch-release.yml --env npm --allow-publish`, npm 11.15+). Renaming the
+workflow or the environment, or adding a package, needs that set again first;
+a new package must exist on npm before it can be trusted, so its first version
+is published by hand (`npm publish <tgz> --access public --tag rlch
+--auth-type=web`).
+
+If the publish job fails, fix the cause and re-run that job (`gh run rerun
+<run-id> --failed -R rlch/takumi`): a version already on npm is skipped, so it
+publishes only what is missing. A `404`/`E403` naming OIDC means the package's
+trusted publisher does not match the workflow file or environment above.
 
 (`--tag rlch` keeps `latest` free.) In schools-ts, change the versions in
 `pnpm-workspace.yaml`'s `overrides` and the `package.json`s that name a takumi
