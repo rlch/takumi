@@ -426,10 +426,12 @@ impl Paginated {
 /// A forced cut with no content on its page above it is dropped, per
 /// css-break-3 §forced-breaks. The column ends at its last content box.
 ///
-/// Layout snaps box edges to whole pixels while the window is fractional, so
-/// a box sized to the page can end up to [`ContentEdges::TOLERANCE`] past the window.
-/// A cut within that distance of a content edge lands on the edge instead of
-/// leaving a sub-pixel sliver on either page.
+/// A cut within [`ContentEdges::TOLERANCE`] below a content edge lands on the
+/// edge instead of opening the next page with a sub-pixel sliver. The window
+/// is fractional and so are the edges, so a box sized to the page can end up
+/// to [`ContentEdges::ROUNDING`] past the window and still takes the cut. A
+/// box that ends further past it does not fit, and is cut or moved like any
+/// other.
 impl Atoms {
   pub(crate) fn page_starts(mut self, headers: &[HeaderBand], total: f32, window: f32) -> Vec<f32> {
     let Self {
@@ -544,14 +546,17 @@ impl Atoms {
 }
 
 /// The tops and bottoms of the content boxes, sorted, which a cut lands on
-/// when it falls within a pixel of one.
+/// when it falls within a pixel below one or a layout unit above one.
 struct ContentEdges(Vec<f32>);
 
 impl ContentEdges {
-  /// How far a snapped box edge can sit from the fractional cut it belongs
-  /// on: half a pixel from snapping the edge, half from snapping the cut
-  /// before it.
+  /// How far short of the window an edge can sit and still take the cut: the
+  /// page ends there instead of leaving a sliver on the next.
   const TOLERANCE: f32 = 1.0;
+  /// How far past the window an edge can sit and still take the cut: one
+  /// layout unit (1/64px), which covers what unit conversion and summing
+  /// lengths put between a window and a box sized to it.
+  const ROUNDING: f32 = 1.0 / 64.0;
 
   fn new(content: &[Atom]) -> Self {
     let mut edges: Vec<f32> = content
@@ -563,8 +568,8 @@ impl ContentEdges {
     Self(edges)
   }
 
-  /// The edge closest to `limit` within [`Self::TOLERANCE`] and above
-  /// `floor`, or `limit` itself.
+  /// The edge closest to `limit` no more than [`Self::TOLERANCE`] short of it
+  /// or [`Self::ROUNDING`] past it, and past `floor`, or `limit` itself.
   fn snap(&self, limit: f32, floor: f32) -> f32 {
     let after = self.0.partition_point(|edge| *edge < limit);
     let before = after.checked_sub(1).map(|index| self.0[index]);
@@ -572,7 +577,9 @@ impl ContentEdges {
     [before, self.0.get(after).copied()]
       .into_iter()
       .flatten()
-      .filter(|edge| (edge - limit).abs() <= Self::TOLERANCE && *edge > floor)
+      .filter(|edge| {
+        (limit - Self::TOLERANCE..=limit + Self::ROUNDING).contains(edge) && *edge > floor
+      })
       .min_by(|a, b| (a - limit).abs().total_cmp(&(b - limit).abs()))
       .unwrap_or(limit)
   }

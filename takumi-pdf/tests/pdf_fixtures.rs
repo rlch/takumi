@@ -5393,6 +5393,54 @@ fn a_box_as_tall_as_the_window_fills_exactly_one_page() {
   );
 }
 
+fn unsplittable_boxes<'g>(fonts: &'g Fonts, height: f32, boxes: &[&str]) -> PdfOptions<'g> {
+  let html: String = boxes
+    .iter()
+    .map(|box_height| {
+      format!(
+        r#"<div style="background: #cbd5e1; break-inside: avoid; height: {box_height}"></div>"#
+      )
+    })
+    .collect();
+
+  PdfOptions::builder()
+    .node(from_html(&html, FromHtmlOptions::default()).expect("parse boxes"))
+    .page(PageOptions {
+      width: 300.0,
+      height,
+      margin: PageMargins::uniform(20.0),
+    })
+    .fonts(fonts)
+    .build()
+}
+
+/// A box that ends past the content window moves to the next page, on a whole
+/// window and on a fractional one.
+#[test]
+fn a_box_ending_past_the_window_moves_to_the_next_page() {
+  let fonts = fonts();
+  let pages = |height: f32, boxes: &[&str]| {
+    page_count(&render_pinned(unsplittable_boxes(&fonts, height, boxes)))
+  };
+
+  assert_eq!(pages(160.0, &["60px", "60px"]), 1, "fills a whole window");
+  assert_eq!(
+    pages(160.0, &["60px", "61px"]),
+    2,
+    "one pixel past a whole window"
+  );
+  assert_eq!(
+    pages(160.3, &["60px", "61px"]),
+    2,
+    "0.7px past a fractional window"
+  );
+  assert_eq!(
+    pages(160.3, &["60px", "60.3px"]),
+    1,
+    "fills a fractional window"
+  );
+}
+
 /// Viewport units in paged content resolve against the page area, as in
 /// print media, although the column lays out at unbounded height.
 #[test]
