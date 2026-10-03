@@ -3,11 +3,7 @@ mod image;
 mod input;
 mod text;
 
-use std::{
-  collections::BTreeMap,
-  mem::take,
-  sync::{Arc, Weak},
-};
+use std::{collections::BTreeMap, mem::take, sync::Arc};
 
 use serde::Deserialize;
 
@@ -139,7 +135,7 @@ impl ImageSourceInput {
   pub fn resolve(&self, context: &RenderContext) -> ImageResult {
     match self {
       Self::Url(src) => resolve_image(src, context),
-      Self::Buffer(data) => ImageSource::from_bytes_lazy(data, 0, Weak::new()),
+      Self::Buffer(data) => context.inline_image_bytes(data),
       Self::Rgba(raw) => Ok(raw.source.clone()),
       Self::Loaded(source) => Ok(source.clone()),
     }

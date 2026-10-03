@@ -12,7 +12,7 @@ use crate::{
   layout::inline::{InlineLayoutCache, MeasureCache, ShapeCache},
   resources::{
     font::{FontsSnapshot, PrimaryFontMetrics},
-    image::ImageSource,
+    image::{ImageResult, ImageSource, ResourceCache, SharedResourceCache},
   },
   style::{
     Affine, AppliedTextDecorations, Color, ComputedStyle, SizingContext, StyleSheet, TwCache,
@@ -23,6 +23,12 @@ use crate::{
 struct RenderShared {
   fonts: FontsSnapshot,
   images: Rc<HashMap<Arc<str>, ImageSource>>,
+  /// Where inline image sources are parsed into: the renderer's cache when it hands one in,
+  /// else one made for this render on first use.
+  resources: OnceCell<ResourceCache>,
+  /// The inline image sources this render resolved, by content hash: one parse per render
+  /// even when `resources` keeps nothing.
+  inline_images: RefCell<HashMap<u64, ImageSource>>,
   stylesheet: Arc<StyleSheet>,
   inline_cache: InlineLayoutCache,
   tw_cache: TwCache,
@@ -57,6 +63,10 @@ pub struct RenderContextInit {
   collapsed_borders: bool,
   #[builder(default)]
   images: Rc<HashMap<Arc<str>, ImageSource>>,
+  /// The cache inline image sources are parsed into, so a renderer that keeps one parses each
+  /// source once across renders. Unset, the render keeps its own.
+  #[builder(default)]
+  resources: Option<ResourceCache>,
   #[builder(default)]
   stylesheet: Arc<StyleSheet>,
   #[builder(default)]
@@ -71,6 +81,8 @@ impl From<RenderContextInit> for RenderContext {
       shared: Rc::new(RenderShared {
         fonts: init.fonts,
         images: init.images,
+        resources: init.resources.map(OnceCell::from).unwrap_or_default(),
+        inline_images: RefCell::new(HashMap::new()),
         stylesheet: init.stylesheet,
         inline_cache: InlineLayoutCache::new(init.shape_cache, init.measure_cache),
         tw_cache: TwCache::default(),
@@ -117,7 +129,7 @@ pub struct RenderContext {
 
 /// A [`RenderContextBuilder`] with nothing set yet.
 type UnsetRenderContextBuilder =
-  RenderContextBuilder<((), (), (), (), (), (), (), (), (), (), (), (), ())>;
+  RenderContextBuilder<((), (), (), (), (), (), (), (), (), (), (), (), (), ())>;
 
 impl RenderContext {
   /// Starts a root context; `fonts` and `sizing` are required.
@@ -153,6 +165,33 @@ impl RenderContext {
   /// The resources fetched externally.
   pub(crate) fn images(&self) -> &HashMap<Arc<str>, ImageSource> {
     &self.shared.images
+  }
+
+  /// The inline image source (a data URI, SVG markup, raw bytes) whose content hashes to
+  /// `hash`, loaded by `load` the first time the render meets it and parsed into the resource
+  /// cache, so every layout pass that sizes it and the paint that draws it read one parse, and
+  /// a renderer that keeps its cache parses it once across renders.
+  pub(crate) fn inline_image(
+    &self,
+    hash: u64,
+    load: impl FnOnce(std::sync::Weak<SharedResourceCache>) -> ImageResult,
+  ) -> ImageResult {
+    if let Some(source) = self.shared.inline_images.borrow().get(&hash) {
+      return Ok(source.clone());
+    }
+
+    let source = self
+      .shared
+      .resources
+      .get_or_init(ResourceCache::default)
+      .get_or_load(hash, load)?;
+
+    self
+      .shared
+      .inline_images
+      .borrow_mut()
+      .insert(hash, source.clone());
+    Ok(source)
   }
 
   /// The stylesheets to apply before layout/rendering.

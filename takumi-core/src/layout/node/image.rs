@@ -1,12 +1,15 @@
 use std::sync::Weak;
 
 use taffy::{CompactLength, MaybeResolve};
+use xxhash_rust::xxh3::xxh3_64;
 
 use crate::{
   context::RenderContext,
   geometry::{AvailableSpace, Size},
   layout::node::{ImageData, ImageSourceInput},
-  resources::image::{ImageError, ImageResult, ImageSource, decode_data_uri, is_svg_like},
+  resources::image::{
+    ImageError, ImageResult, ImageSource, SharedResourceCache, decode_data_uri, is_svg_like,
+  },
   style::{Length, Style, StyleDeclaration},
 };
 
@@ -248,21 +251,37 @@ fn resolve_style_size_axis(
 
 const DATA_URI_PREFIX: &str = "data:";
 
-fn parse_data_uri_image(src: &str) -> ImageResult {
+fn parse_data_uri_image(src: &str, hash: u64, cache: Weak<SharedResourceCache>) -> ImageResult {
   let decoded = decode_data_uri(src).map_err(|_| ImageError::InvalidDataUriFormat)?;
 
-  ImageSource::from_bytes_lazy(&decoded.bytes, 0, Weak::new())
+  ImageSource::from_bytes_lazy(&decoded.bytes, hash, cache)
+}
+
+impl RenderContext {
+  /// The image `bytes` hold, parsed once per render through [`RenderContext::inline_image`].
+  pub(crate) fn inline_image_bytes(&self, bytes: &[u8]) -> ImageResult {
+    let hash = xxh3_64(bytes);
+
+    self.inline_image(hash, |cache| {
+      ImageSource::from_bytes_lazy(bytes, hash, cache)
+    })
+  }
 }
 
 /// Resolve an image source string (data URI, SVG, or registered URL) to its bytes.
+///
+/// A data URI or SVG markup is parsed into the render's resource cache, keyed by the text, so
+/// the intrinsic sizing every layout pass asks for and the paint that follows read one parse.
 pub fn resolve_image(src: &str, context: &RenderContext) -> ImageResult {
   if src.starts_with(DATA_URI_PREFIX) {
-    return parse_data_uri_image(src);
+    let hash = xxh3_64(src.as_bytes());
+
+    return context.inline_image(hash, |cache| parse_data_uri_image(src, hash, cache));
   }
 
   if is_svg_like(src) {
     #[cfg(feature = "svg-sizing")]
-    return ImageSource::from_bytes(src.as_bytes());
+    return context.inline_image_bytes(src.as_bytes());
     #[cfg(not(feature = "svg-sizing"))]
     return Err(ImageError::SvgParseNotSupported);
   }
@@ -299,6 +318,8 @@ mod tests {
   fn parse_data_uri_svg_with_unescaped_hash() {
     let source = parse_data_uri_image(
       "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'><rect width='10' height='10' fill='#f00'/></svg>",
+      0,
+      std::sync::Weak::new(),
     )
     .unwrap();
 
@@ -442,5 +463,84 @@ mod tests {
         height: 28.0,
       }
     );
+  }
+
+  #[cfg(feature = "svg")]
+  const SVG_DATA_URI: &str = "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'><rect width='10' height='10' fill='#f00'/></svg>";
+
+  #[cfg(feature = "svg")]
+  fn context_with(resources: Option<crate::resources::image::ResourceCache>) -> RenderContext {
+    RenderContext::builder()
+      .fonts(Fonts::default().snapshot())
+      .sizing(
+        SizingContext::builder()
+          .viewport(Viewport::new((100, 100)))
+          .build(),
+      )
+      .resources(resources)
+      .build()
+  }
+
+  #[cfg(feature = "svg")]
+  fn same_svg(a: &ImageSource, b: &ImageSource) -> bool {
+    match (a, b) {
+      (ImageSource::Svg(a), ImageSource::Svg(b)) => std::sync::Arc::ptr_eq(a, b),
+      _ => panic!("expected svg sources"),
+    }
+  }
+
+  /// Layout sizes an image on every pass that measures it, and paint resolves it again: a data
+  /// URI, inline markup or raw bytes parse once per render, not once per resolve.
+  #[cfg(feature = "svg")]
+  #[test]
+  fn an_inline_source_parses_once_per_render() {
+    use super::resolve_image;
+
+    let context = context_with(None);
+    let markup = &SVG_DATA_URI["data:image/svg+xml,".len()..];
+    let bytes = ImageSourceInput::Buffer(markup.as_bytes().to_vec());
+
+    for src in [SVG_DATA_URI, markup] {
+      let first = resolve_image(src, &context).unwrap();
+      let again = resolve_image(src, &context).unwrap();
+
+      assert!(same_svg(&first, &again), "{src} parsed twice");
+    }
+    assert!(same_svg(
+      &bytes.resolve(&context).unwrap(),
+      &bytes.resolve(&context).unwrap()
+    ));
+  }
+
+  /// Even a cache that keeps nothing parses an inline source once per render.
+  #[cfg(feature = "svg")]
+  #[test]
+  fn an_inline_source_parses_once_per_render_without_retention() {
+    use super::resolve_image;
+
+    let context = context_with(Some(crate::resources::image::ResourceCache::new(0)));
+
+    assert!(same_svg(
+      &resolve_image(SVG_DATA_URI, &context).unwrap(),
+      &resolve_image(SVG_DATA_URI, &context).unwrap()
+    ));
+  }
+
+  /// A renderer that hands its cache to every render parses an inline source once across them;
+  /// renders without one share nothing.
+  #[cfg(feature = "svg")]
+  #[test]
+  fn an_inline_source_parses_once_per_renderer_cache() {
+    use super::resolve_image;
+
+    let cache = crate::resources::image::ResourceCache::default();
+    let first = resolve_image(SVG_DATA_URI, &context_with(Some(cache.clone()))).unwrap();
+    let second = resolve_image(SVG_DATA_URI, &context_with(Some(cache))).unwrap();
+
+    assert!(same_svg(&first, &second));
+    assert!(!same_svg(
+      &resolve_image(SVG_DATA_URI, &context_with(None)).unwrap(),
+      &resolve_image(SVG_DATA_URI, &context_with(None)).unwrap()
+    ));
   }
 }
