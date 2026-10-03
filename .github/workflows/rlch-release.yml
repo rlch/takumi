@@ -388,6 +388,7 @@ jobs:
               echo "skip $name@$version: already on npm" | tee -a "$GITHUB_STEP_SUMMARY"
               continue
             fi
-            npm publish "$f" --access public --tag rlch
+            # `./`: a bare `release/<name>.tgz` reads to npm as a GitHub `owner/repo`.
+            npm publish "./$f" --access public --tag rlch
             echo "published $name@$version" | tee -a "$GITHUB_STEP_SUMMARY"
           done
