@@ -396,3 +396,74 @@ fn create_test_context() -> Fonts {
 
   context
 }
+
+/// Every HTML fixture under `tests/fixtures-html/`, sorted.
+pub fn html_fixture_paths() -> Vec<PathBuf> {
+  let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures-html");
+  let mut files: Vec<PathBuf> = fs::read_dir(&dir)
+    .expect("tests/fixtures-html directory")
+    .filter_map(|entry| {
+      let path = entry.ok()?.path();
+
+      (path.extension()? == "html").then_some(path)
+    })
+    .collect();
+
+  files.sort();
+  assert!(!files.is_empty(), "no HTML fixtures found");
+  files
+}
+
+/// The render options an HTML fixture describes: its `<body>` as the node, the
+/// body's `width`/`height` as the viewport and its `<style>` as the stylesheet.
+pub fn html_fixture(path: &Path) -> Result<RenderOptions<'static>, String> {
+  let html = fs::read_to_string(path).map_err(|error| error.to_string())?;
+  let body = section(&html, "<body", "</body>")
+    .and_then(|tag_onward| tag_onward.split_once('>'))
+    .map(|(_, inner)| inner.trim())
+    .ok_or("no <body> element")?;
+  let viewport = body_viewport(&html)?;
+  let css = section(&html, "<style>", "</style>").unwrap_or("").trim();
+
+  let options = FromHtmlOptions::builder()
+    .presets(StylePresets::empty())
+    .build();
+  let node = Node::from_html(body, options).map_err(|error| format!("parse: {error:?}"))?;
+  let stylesheet = StyleSheet::parse(css).map_err(|error| format!("stylesheet: {error:?}"))?;
+
+  Ok(
+    RenderOptions::builder()
+      .viewport(viewport)
+      .node(node)
+      .fonts(&CONTEXT)
+      .images(TEST_IMAGES.clone())
+      .stylesheet(stylesheet.into())
+      .build(),
+  )
+}
+
+fn body_viewport(html: &str) -> Result<Viewport, String> {
+  let style = section(html, "<body style=\"", "\"").ok_or("no styled <body>")?;
+  let pixels = |property: &str| {
+    style
+      .split(';')
+      .filter_map(|declaration| declaration.split_once(':'))
+      .find(|(name, _)| name.trim() == property)
+      .ok_or(format!("no body {property}"))
+      .and_then(|(_, value)| {
+        value
+          .trim()
+          .trim_end_matches("px")
+          .parse::<u32>()
+          .map_err(|error| error.to_string())
+      })
+  };
+
+  Ok(Viewport::new((pixels("width")?, pixels("height")?)))
+}
+
+fn section<'h>(html: &'h str, start: &str, end: &str) -> Option<&'h str> {
+  let after = &html[html.find(start)? + start.len()..];
+
+  Some(&after[..after.find(end)?])
+}

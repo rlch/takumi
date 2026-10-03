@@ -44,6 +44,14 @@ extern "C" {
   /// JavaScript object representing a measured node tree.
   #[wasm_bindgen(typescript_type = "MeasuredNode")]
   pub type MeasuredNodeType;
+
+  /// JavaScript object holding an encoded image and its measured node tree.
+  #[wasm_bindgen(typescript_type = "RenderedWithMeasure")]
+  pub type RenderedWithMeasureType;
+
+  /// JavaScript object holding an SVG document and its measured node tree.
+  #[wasm_bindgen(typescript_type = "SvgRenderedWithMeasure")]
+  pub type SvgRenderedWithMeasureType;
 }
 
 /// Options for constructing a `Renderer`.

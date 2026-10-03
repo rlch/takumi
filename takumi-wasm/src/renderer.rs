@@ -17,8 +17,8 @@ use takumi_core::{
   viewport::Viewport,
 };
 use takumi_raster::{
-  AnimatedGifOptions, AnimatedPngOptions, AnimatedWebpOptions, AnimationFormat, SequentialScene,
-  measure, render, write_animation, write_image,
+  AnimatedGifOptions, AnimatedPngOptions, AnimatedWebpOptions, AnimationFormat, Bitmap,
+  SequentialScene, measure, render, render_with_measure, write_animation, write_image,
 };
 use wasm_bindgen::prelude::*;
 
@@ -138,20 +138,33 @@ impl Renderer {
 
     let image = render(render_options).map_err(map_error)?;
 
-    if format == OutputFormat::Raw {
-      return Ok(image.into_raw());
-    }
+    Ok(encode(image, format, quality)?)
+  }
 
-    let mut buffer = Vec::new();
+  /// Renders a node tree into an image buffer and measures its layout, laying it out once for
+  /// both. The image is `render`'s and the measured tree `measure`'s for the same options.
+  #[wasm_bindgen(js_name = renderWithMeasure)]
+  pub fn render_with_measure(
+    &self,
+    node: NodeType,
+    options: Option<RenderOptionsType>,
+  ) -> Result<RenderedWithMeasureType, JsValue> {
+    let node: Node = from_value(node.into()).map_err(map_error)?;
+    let options: RenderOptions = options
+      .map(|options| from_value(options.into()).map_err(map_error))
+      .transpose()?
+      .unwrap_or_default();
 
-    write_image(
-      &image,
-      &mut buffer,
-      format.into_image_output_format(quality),
-    )
-    .map_err(map_error)?;
+    let format = options.format.unwrap_or(OutputFormat::Png);
+    let quality = options.quality;
+    let images = self.images_map(options.images.as_deref())?;
+    let state = self.fonts.read().map_err(map_error)?;
+    let render_options = raster_options(&self.resource_cache, &state, node, options, images)?;
 
-    Ok(buffer)
+    let (image, measured) = render_with_measure(render_options).map_err(map_error)?;
+    let image = js_sys::Uint8Array::from(encode(image, format, quality)?.as_slice());
+
+    with_measure("image", image.into(), &measured)
   }
 
   /// Renders a node tree into an SVG document string.
@@ -168,17 +181,51 @@ impl Renderer {
       .unwrap_or_default();
 
     let images = self.images_map(options.images.as_deref())?;
+    let state = self.fonts.read().map_err(map_error)?;
+
+    Ok(takumi_svg::render(self.svg_options(&state, node, options, images)?).map_err(map_error)?)
+  }
+
+  /// Renders a node tree into an SVG document string and measures its layout, laying it out once
+  /// for both. The SVG is `renderSvg`'s and the measured tree `measure`'s for the same options.
+  #[wasm_bindgen(js_name = renderSvgWithMeasure)]
+  pub fn render_svg_with_measure(
+    &self,
+    node: NodeType,
+    options: Option<SvgRenderOptionsType>,
+  ) -> Result<SvgRenderedWithMeasureType, JsValue> {
+    let node: Node = from_value(node.into()).map_err(map_error)?;
+    let options: SvgRenderOptions = options
+      .map(|options| from_value(options.into()).map_err(map_error))
+      .transpose()?
+      .unwrap_or_default();
+
+    let images = self.images_map(options.images.as_deref())?;
+    let state = self.fonts.read().map_err(map_error)?;
+
+    let (svg, measured) =
+      takumi_svg::render_with_measure(self.svg_options(&state, node, options, images)?)
+        .map_err(map_error)?;
+
+    with_measure("svg", svg.into(), &measured)
+  }
+
+  fn svg_options<'fonts>(
+    &self,
+    fonts: &'fonts Fonts,
+    node: Node,
+    options: SvgRenderOptions,
+    images: HashMap<Arc<str>, LoadedImageSource>,
+  ) -> Result<takumi_svg::SvgOptions<'fonts>, js_sys::Error> {
     let stylesheet = stylesheet(
       &self.resource_cache,
       css_or_stylesheets(options.css, options.stylesheets),
       options.keyframes.unwrap_or_default(),
     )
     .map_err(map_error)?;
-    let state = self.fonts.read().map_err(map_error)?;
-
     let lang = parse_lang(options.lang.as_deref()).map_err(map_error)?;
 
-    let svg = takumi_svg::render(
+    Ok(
       takumi_svg::SvgOptions::builder()
         .viewport(Viewport::new((options.width, options.height)))
         .images(images)
@@ -186,14 +233,11 @@ impl Renderer {
         .stylesheet(stylesheet)
         .time_ms(time_ms(options.time_ms))
         .node(node)
-        .fonts(&state)
+        .fonts(fonts)
         .font_families(options.font_families.map(FontFamily::from_names))
         .lang(lang)
         .build(),
     )
-    .map_err(map_error)?;
-
-    Ok(svg)
   }
 
   /// Measures a node tree and returns layout information.
@@ -327,4 +371,44 @@ impl Renderer {
 
     Ok(buffer)
   }
+}
+
+/// Encodes `image` in `format`; `raw` is its RGBA pixels.
+fn encode(
+  image: Bitmap,
+  format: OutputFormat,
+  quality: Option<u8>,
+) -> Result<Vec<u8>, js_sys::Error> {
+  if format == OutputFormat::Raw {
+    return Ok(image.into_raw());
+  }
+
+  let mut buffer = Vec::new();
+
+  write_image(
+    &image,
+    &mut buffer,
+    format.into_image_output_format(quality),
+  )
+  .map_err(map_error)?;
+
+  Ok(buffer)
+}
+
+/// `{ [key]: output, measured }`, the result of a `…WithMeasure` call.
+fn with_measure<T: JsCast>(
+  key: &str,
+  output: JsValue,
+  measured: &takumi_raster::MeasuredNode,
+) -> Result<T, JsValue> {
+  let result = js_sys::Object::new();
+
+  js_sys::Reflect::set(&result, &key.into(), &output)?;
+  js_sys::Reflect::set(
+    &result,
+    &"measured".into(),
+    &to_value(measured).map_err(map_error)?,
+  )?;
+
+  Ok(result.unchecked_into())
 }

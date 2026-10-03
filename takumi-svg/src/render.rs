@@ -13,6 +13,7 @@ use takumi_core::{
     border::BorderProperties,
     inline::{InlineBoxItem, InlinePass, PositionedInlineRun, VisualInlineBox},
     inline_box::{InlineBoxPaint, resolve_inline_box},
+    measure::MeasuredNode,
     node::Node,
     tree::RenderNode,
   },
@@ -76,6 +77,24 @@ pub struct SvgOptions<'g> {
 
 /// Renders a node tree to a vector SVG string.
 pub fn render(options: SvgOptions<'_>) -> Result<String> {
+  emit(&lay_out(options)?)
+}
+
+/// Renders a node tree to a vector SVG string and measures its layout from the same pass: the
+/// tree is laid out once, where a measure then a render lay it out twice.
+///
+/// The SVG is the one [`render`] emits and the measurement the one a measure of the same node,
+/// viewport and fonts returns.
+pub fn render_with_measure(options: SvgOptions<'_>) -> Result<(String, MeasuredNode)> {
+  let container_size = options.viewport.size.into();
+  let mut scene = lay_out(options)?;
+  let svg = emit(&scene)?;
+  let measured = MeasuredNode::of(&mut scene.root, &scene.results, container_size)?;
+
+  Ok((svg, measured))
+}
+
+fn lay_out(options: SvgOptions<'_>) -> Result<Scene> {
   let viewport = options.viewport;
 
   let context = RenderContext::builder()
@@ -95,14 +114,17 @@ pub fn render(options: SvgOptions<'_>) -> Result<String> {
     )))
     .build();
 
-  let scene = Scene::lay_out(
+  Scene::lay_out(
     RenderNode::from_node(&context, options.node),
     viewport,
     true,
-  )?;
+  )
+}
+
+fn emit(scene: &Scene) -> Result<String> {
   let mut doc = SvgDocument::new(scene.size.width, scene.size.height)?;
 
-  SceneEmitter { scene: &scene }.emit(&mut doc)?;
+  SceneEmitter { scene }.emit(&mut doc)?;
 
   Ok(doc.finish()?)
 }

@@ -146,6 +146,32 @@ pub fn render<'g>(mut options: RenderOptions<'g>) -> Result<Bitmap> {
   render_with_context(render_context, options.node, options.viewport)
 }
 
+/// Renders a node to an image and measures its layout from the same pass: the
+/// tree is laid out once, where [`measure`] then [`render`] lay it out twice.
+///
+/// The image is the one [`render`] draws and the measurement the one [`measure`]
+/// returns for the same options. A node that lays out at no width or height is
+/// an error, as it is for [`render`].
+pub fn render_with_measure<'g>(mut options: RenderOptions<'g>) -> Result<(Bitmap, MeasuredNode)> {
+  let images = Rc::new(mem::take(&mut options.images));
+  let render_context = options.render_context(options.fonts_snapshot(), images, options.time_ms);
+  let mut scene = Scene::lay_out(
+    RenderNode::from_node(&render_context, options.node),
+    options.viewport,
+    true,
+  )?;
+  let image = paint(&mut scene)?;
+  // Measured after the paint, which reads each box's context as `render` leaves it;
+  // the measure sets every box's container size before it reads it.
+  let measured = MeasuredNode::of(
+    &mut scene.root,
+    &scene.results,
+    options.viewport.size.into(),
+  )?;
+
+  Ok((image, measured))
+}
+
 /// Rasterizes `node` under an already-built [`RenderContext`]. The context
 /// carries the font snapshot, images, and stylesheet, so animation frames share
 /// one snapshot instead of re-snapshotting per frame.
@@ -155,6 +181,12 @@ fn render_with_context(
   viewport: Viewport,
 ) -> Result<Bitmap> {
   let mut scene = Scene::lay_out(RenderNode::from_node(&render_context, node), viewport, true)?;
+
+  paint(&mut scene)
+}
+
+/// Paints a laid-out scene onto a canvas of its size.
+fn paint(scene: &mut Scene) -> Result<Bitmap> {
   let size = scene.size.map(|length| length.round() as u32);
 
   if size.width == 0 || size.height == 0 {
@@ -163,7 +195,7 @@ fn render_with_context(
 
   let mut canvas = Canvas::try_new(size).ok_or(Error::InvalidViewport)?;
 
-  paint_scene(&mut scene, &mut canvas)?;
+  paint_scene(scene, &mut canvas)?;
 
   let image = canvas.into_inner()?;
 

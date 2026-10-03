@@ -265,6 +265,18 @@ export type MeasuredNode = {
   runs: MeasuredTextRun[];
 };
 
+/** An encoded image and the measured layout of the node tree it draws. */
+export type RenderedWithMeasure = {
+  image: Uint8Array<ArrayBuffer>;
+  measured: MeasuredNode;
+};
+
+/** An SVG document and the measured layout of the node tree it draws. */
+export type SvgRenderedWithMeasure = {
+  svg: string;
+  measured: MeasuredNode;
+};
+
 export type AnimationScene = {
   node: Node;
   durationMs: number;

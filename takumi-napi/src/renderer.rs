@@ -21,9 +21,14 @@ use takumi_raster::{
 };
 
 use crate::{
-  De, JsBytes, deserialize_with_tracing, load_font_task::LoadFontTask, map_error,
-  measure_task::MeasureTask, parse_font_input, render_animation_task::RenderAnimationTask,
-  render_task::RenderTask, svg_render_task::SvgRenderTask,
+  De, JsBytes, deserialize_with_tracing,
+  load_font_task::LoadFontTask,
+  map_error,
+  measure_task::MeasureTask,
+  parse_font_input,
+  render_animation_task::RenderAnimationTask,
+  render_task::{RenderTask, RenderWithMeasureTask},
+  svg_render_task::{SvgRenderTask, SvgRenderWithMeasureTask},
 };
 
 /// Represents a single run of text in a measured node.
@@ -79,6 +84,25 @@ impl From<takumi_raster::MeasuredNode> for MeasuredNode {
       runs: node.runs.into_iter().map(Into::into).collect(),
     }
   }
+}
+
+/// An image and the measured layout of the node tree it draws.
+#[napi(object)]
+pub struct RenderedWithMeasure {
+  /// The image, encoded as `render` encodes it.
+  #[napi(ts_type = "Buffer<ArrayBuffer>")]
+  pub image: Buffer,
+  /// The layout, as `measure` returns it.
+  pub measured: MeasuredNode,
+}
+
+/// An SVG document and the measured layout of the node tree it draws.
+#[napi(object)]
+pub struct SvgRenderedWithMeasure {
+  /// The SVG document, as `renderSvg` returns it.
+  pub svg: String,
+  /// The layout, as `measure` returns it.
+  pub measured: MeasuredNode,
 }
 
 /// The main renderer for Takumi image rendering engine (Node.js version).
@@ -496,6 +520,59 @@ impl Renderer {
         options.unwrap_or_default(),
         Arc::clone(&self.state),
       )?,
+      signal,
+    ))
+  }
+
+  /// Renders a node tree into an image buffer and measures its layout, laying it out once
+  /// for both. The image is `render`'s and the measured tree `measure`'s for the same options.
+  #[napi(
+    ts_args_type = "source: Node, options?: RenderOptions, signal?: AbortSignal",
+    ts_return_type = "Promise<RenderedWithMeasure>"
+  )]
+  pub fn render_with_measure(
+    &self,
+    env: Env,
+    source: Object,
+    options: Option<RenderOptions>,
+    signal: Option<AbortSignal>,
+  ) -> Result<AsyncTask<RenderWithMeasureTask>> {
+    let node: Node = deserialize_with_tracing(source)?;
+
+    Ok(AsyncTask::with_optional_signal(
+      RenderWithMeasureTask(RenderTask::from_options(
+        env,
+        node,
+        options.unwrap_or_default(),
+        Arc::clone(&self.state),
+      )?),
+      signal,
+    ))
+  }
+
+  /// Renders a node tree into an SVG document string and measures its layout, laying it out
+  /// once for both. The SVG is `renderSvg`'s and the measured tree `measure`'s for the same
+  /// options.
+  #[napi(
+    ts_args_type = "source: Node, options?: SvgRenderOptions, signal?: AbortSignal",
+    ts_return_type = "Promise<SvgRenderedWithMeasure>"
+  )]
+  pub fn render_svg_with_measure(
+    &self,
+    env: Env,
+    source: Object,
+    options: Option<SvgRenderOptions>,
+    signal: Option<AbortSignal>,
+  ) -> Result<AsyncTask<SvgRenderWithMeasureTask>> {
+    let node: Node = deserialize_with_tracing(source)?;
+
+    Ok(AsyncTask::with_optional_signal(
+      SvgRenderWithMeasureTask(SvgRenderTask::from_options(
+        env,
+        node,
+        options.unwrap_or_default(),
+        Arc::clone(&self.state),
+      )?),
       signal,
     ))
   }

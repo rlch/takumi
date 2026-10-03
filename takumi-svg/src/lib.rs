@@ -34,7 +34,7 @@ use quick_xml::{
   Writer,
   events::{BytesEnd, BytesStart, BytesText, Event},
 };
-pub use render::{SvgOptions, render};
+pub use render::{SvgOptions, render, render_with_measure};
 use takumi_core::{
   context::RenderContext,
   filter::ColorMatrix,

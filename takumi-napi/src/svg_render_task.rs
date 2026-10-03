@@ -11,8 +11,8 @@ use takumi_core::{
 use crate::{
   JsBytes, map_error,
   renderer::{
-    ImageCacheMode, RendererState, SvgRenderOptions, collect_images, decode_images,
-    deserialize_css, deserialize_keyframes,
+    ImageCacheMode, RendererState, SvgRenderOptions, SvgRenderedWithMeasure, collect_images,
+    decode_images, deserialize_css, deserialize_keyframes,
   },
 };
 
@@ -54,11 +54,12 @@ impl SvgRenderTask {
   }
 }
 
-impl Task for SvgRenderTask {
-  type Output = String;
-  type JsValue = String;
-
-  fn compute(&mut self) -> Result<Self::Output> {
+impl SvgRenderTask {
+  /// Runs `draw` over this task's SVG options. Takes the node, so it runs once.
+  fn draw<T>(
+    &mut self,
+    draw: impl FnOnce(takumi_svg::SvgOptions) -> takumi_core::Result<T>,
+  ) -> Result<T> {
     let Some(node) = self.node.take() else {
       unreachable!()
     };
@@ -67,7 +68,7 @@ impl Task for SvgRenderTask {
 
     let images = decode_images(&self.state.resource_cache, take(&mut self.images))?;
 
-    takumi_svg::render(
+    draw(
       takumi_svg::SvgOptions::builder()
         .viewport(self.viewport)
         .images(images)
@@ -82,8 +83,36 @@ impl Task for SvgRenderTask {
     )
     .map_err(map_error)
   }
+}
+
+impl Task for SvgRenderTask {
+  type Output = String;
+  type JsValue = String;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    self.draw(takumi_svg::render)
+  }
 
   fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
     Ok(output)
+  }
+}
+
+/// An [`SvgRenderTask`] that also returns the measured layout, from the same layout pass.
+pub struct SvgRenderWithMeasureTask(pub(crate) SvgRenderTask);
+
+impl Task for SvgRenderWithMeasureTask {
+  type Output = (String, takumi_raster::MeasuredNode);
+  type JsValue = SvgRenderedWithMeasure;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    self.0.draw(takumi_svg::render_with_measure)
+  }
+
+  fn resolve(&mut self, _env: Env, (svg, measured): Self::Output) -> Result<Self::JsValue> {
+    Ok(SvgRenderedWithMeasure {
+      svg,
+      measured: measured.into(),
+    })
   }
 }
