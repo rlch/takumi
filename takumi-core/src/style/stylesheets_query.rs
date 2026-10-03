@@ -125,46 +125,53 @@ impl ComputedStyle {
       || self.scale.is_some()
   }
 
-  /// Blink's `UpdateForPaintOffsetTranslation`: the paint offset a box with this style paints
-  /// at, from `paint_offset` in its parent's space, after the translation its transform, backdrop
-  /// filter, or containment takes moves the whole pixels out. `local` is the box's transform.
+  /// Blink's `UpdateForPaintOffsetTranslation` for a box with this style at `paint_offset` in its
+  /// parent's space: the paint offset it paints at after the translation its transform, backdrop
+  /// filter, or containment takes moves the whole pixels out, and the fraction of `paint_offset`
+  /// that translation rounds away. `local` is the box's transform.
   pub(crate) fn paint_offset_after_translation(
     &self,
     paint_offset: Point<f32>,
     local: Affine,
-  ) -> Point<f32> {
-    // Blink's `NeedsIsolationNodes`.
-    let isolates = self.contain.contains(Contain::PAINT)
-      || (self.contain.contains(Contain::STYLE) && self.contain.contains(Contain::LAYOUT));
-
-    if isolates {
-      return Point::ZERO;
-    }
-    if !self.has_transform_related_property() && self.backdrop_filter.is_empty() {
-      return paint_offset;
+  ) -> PaintOffsetTranslation {
+    if !self.has_transform_related_property() && self.backdrop_filter.is_empty() && !isolates(self)
+    {
+      return PaintOffsetTranslation {
+        paint_offset,
+        dropped: Point::ZERO,
+      };
     }
 
     // `ToRoundedVector2d` rounds as `LayoutUnit::Round` does, halves up.
-    let subpixel = |offset: f32| offset - (offset + 0.5).floor();
-    // Blink's `CanPropagateSubpixelAccumulation`.
-    let (keep_x, keep_y) = if local.only_translation() {
+    let subpixel = Point {
+      x: paint_offset.x - (paint_offset.x + 0.5).floor(),
+      y: paint_offset.y - (paint_offset.y + 0.5).floor(),
+    };
+    // Blink's `CanPropagateSubpixelAccumulation`; none passes through paint isolation.
+    let (keep_x, keep_y) = if isolates(self) {
+      (false, false)
+    } else if local.only_translation() {
       (true, true)
     } else if local.b == 0.0 && local.c == 0.0 {
       (local.a == 1.0, local.d == 1.0)
     } else {
       (false, false)
     };
+    let keep = |keep: bool, subpixel: f32| {
+      if keep {
+        (subpixel, 0.0)
+      } else {
+        (0.0, subpixel)
+      }
+    };
+    let (x, dropped_x) = keep(keep_x, subpixel.x);
+    let (y, dropped_y) = keep(keep_y, subpixel.y);
 
-    Point {
-      x: if keep_x {
-        subpixel(paint_offset.x)
-      } else {
-        0.0
-      },
-      y: if keep_y {
-        subpixel(paint_offset.y)
-      } else {
-        0.0
+    PaintOffsetTranslation {
+      paint_offset: Point { x, y },
+      dropped: Point {
+        x: dropped_x,
+        y: dropped_y,
       },
     }
   }
@@ -504,4 +511,20 @@ impl ComputedStyle {
       text_align: taffy::TextAlign::Auto,
     }
   }
+}
+
+/// Where a box paints after Blink's paint offset translation.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PaintOffsetTranslation {
+  /// The paint offset the box and its contents paint at.
+  pub paint_offset: Point<f32>,
+  /// The fraction of the incoming paint offset the translation rounds away and nothing paints at,
+  /// which the box's device space leaves out of its layout location.
+  pub dropped: Point<f32>,
+}
+
+/// Blink's `NeedsIsolationNodes`.
+fn isolates(style: &ComputedStyle) -> bool {
+  style.contain.contains(Contain::PAINT)
+    || (style.contain.contains(Contain::STYLE) && style.contain.contains(Contain::LAYOUT))
 }
