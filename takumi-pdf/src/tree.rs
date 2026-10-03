@@ -11,7 +11,7 @@ use takumi_core::{
     tree::RenderNode,
   },
   painter::OwnContent,
-  resources::image::ImageSource,
+  resources::image::{ImageSource, ResourceCache},
   scene::{NodePaint, PaintItemKind, Scene},
   style::{
     ComputedStyle, Display, FlexDirection, FontFamily, Lang, Length, Position, SizingContext,
@@ -37,6 +37,8 @@ pub(crate) struct TreeInputs<'g> {
   pub(crate) fonts: &'g Fonts,
   pub(crate) stylesheet: Arc<StyleSheet>,
   pub(crate) images: Rc<HashMap<Arc<str>, ImageSource>>,
+  /// Where inline image sources are parsed into, shared by every page and band.
+  pub(crate) resources: ResourceCache,
   pub(crate) font_families: Option<FontFamily>,
   pub(crate) lang: Option<Lang>,
 }
@@ -51,6 +53,7 @@ impl TreeInputs<'_> {
       )
       .sizing(SizingContext::builder().viewport(viewport).build())
       .images(self.images.clone())
+      .resources(Some(self.resources.clone()))
       .stylesheet(self.stylesheet.clone())
       .style(Box::new(ComputedStyle::root(
         self.lang,

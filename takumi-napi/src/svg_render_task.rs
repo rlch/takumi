@@ -71,6 +71,7 @@ impl Task for SvgRenderTask {
       takumi_svg::SvgOptions::builder()
         .viewport(self.viewport)
         .images(images)
+        .resource_cache(self.state.resource_cache.clone())
         .stylesheet(take(&mut self.stylesheet))
         .time_ms(self.time_ms)
         .node(node)

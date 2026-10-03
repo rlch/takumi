@@ -134,6 +134,7 @@ pub fn measure(options: MeasureOptions<'_>) -> Result<MeasuredSize, PdfError> {
     fonts: options.fonts,
     stylesheet: options.stylesheet,
     images: Rc::new(options.images),
+    resources: options.resource_cache.unwrap_or_default(),
     font_families: options.font_families,
     lang: options.lang,
   };
@@ -163,6 +164,7 @@ pub fn render(mut options: PdfOptions<'_>) -> Result<Vec<u8>, PdfError> {
     fonts: options.fonts,
     stylesheet: options.stylesheet,
     images: Rc::new(options.images),
+    resources: options.resource_cache.unwrap_or_default(),
     font_families: options.font_families,
     lang: options.lang,
   };

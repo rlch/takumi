@@ -958,7 +958,8 @@ pub(crate) type SharedResourceCache = Cache<ResourceCacheKey, CacheEntry, Resour
 
 /// Content-addressed store of decoded render resources — images, SVG rasters,
 /// parsed stylesheets — sharing one byte budget, used by the renderer to avoid
-/// re-decoding and re-parsing.
+/// re-decoding and re-parsing. A clone shares the store.
+#[derive(Clone)]
 pub struct ResourceCache {
   cache: Arc<SharedResourceCache>,
 }
@@ -1018,16 +1019,35 @@ impl ResourceCache {
       };
     }
 
+    self.get_or_load(hash, |cache| {
+      ImageSource::from_bytes_lazy(bytes, hash, cache)
+    })
+  }
+
+  /// Returns the source `hash` addresses, loading it with `load` on a miss and caching it.
+  /// `load` receives the handle its sized entries (SVG rasters, pre-scaled decodes) go into.
+  ///
+  /// The source behind an inline `src` (a data URI, SVG markup, raw bytes) goes through here
+  /// keyed by its content, so it parses once while it stays cached, not once per layout pass
+  /// that measures it or per render that draws it. Concurrent misses are single-flighted; a
+  /// failed load is not cached.
+  pub(crate) fn get_or_load(
+    &self,
+    hash: u64,
+    load: impl FnOnce(Weak<SharedResourceCache>) -> ImageResult,
+  ) -> ImageResult {
+    let key = ResourceCacheKey::source(hash);
+
     match self.cache.get_value_or_guard(&key, None) {
       GuardResult::Value(CacheEntry::Source(source)) => Ok(source),
-      GuardResult::Value(_) => ImageSource::from_bytes(bytes),
+      GuardResult::Value(_) => load(Weak::new()),
       GuardResult::Guard(guard) => {
-        let source = ImageSource::from_bytes_lazy(bytes, hash, Arc::downgrade(&self.cache))?;
+        let source = load(Arc::downgrade(&self.cache))?;
         let _ = guard.insert(CacheEntry::Source(source.clone()));
         Ok(source)
       }
       // `None` timeout never times out.
-      GuardResult::Timeout => ImageSource::from_bytes(bytes),
+      GuardResult::Timeout => load(Weak::new()),
     }
   }
 

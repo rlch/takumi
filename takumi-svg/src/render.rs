@@ -22,7 +22,7 @@ use takumi_core::{
     SpanBackground, StrokeStyle, UNBOUNDED,
   },
   path_data::{edges_path_data, path_data},
-  resources::image::ImageSource,
+  resources::image::{ImageSource, ResourceCache},
   scene::Scene,
   shadow::SizedShadow,
   style::{
@@ -56,6 +56,10 @@ pub struct SvgOptions<'g> {
   /// Resources fetched externally, keyed by URL.
   #[builder(default)]
   pub(crate) images: HashMap<Arc<str>, ImageSource>,
+  /// The renderer's cache, which inline sources (data URIs, SVG markup, raw bytes) are parsed
+  /// into once across renders. Unset, each render parses them once for itself.
+  #[builder(default, setter(strip_option))]
+  pub(crate) resource_cache: Option<ResourceCache>,
   /// CSS stylesheets to apply before layout.
   #[builder(default)]
   pub(crate) stylesheet: Arc<StyleSheet>,
@@ -82,6 +86,7 @@ pub fn render(options: SvgOptions<'_>) -> Result<String> {
     )
     .sizing(SizingContext::builder().viewport(viewport).build())
     .images(Rc::new(options.images))
+    .resources(options.resource_cache)
     .stylesheet(options.stylesheet)
     .time_ms(options.time_ms)
     .style(Box::new(ComputedStyle::root(

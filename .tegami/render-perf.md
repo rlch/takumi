@@ -10,3 +10,4 @@ packages:
 - Oblique linear gradients, scaled images, masks and the final alpha pass skip per-pixel work.
 - `@property` rules are collected once per render instead of applied to every element, and a child shares its parent's custom properties until it sets one, so a page styled with Tailwind v4's stylesheet renders several times faster.
 - A `font-family` stack is expanded against the registered subset families once per render instead of once per text run, strut and decoration, so a page whose fallback chain names CJK families split into many `unicode-range` slices lays out its inline content much faster.
+- An image given inline — a data URI, SVG markup or raw bytes — is parsed once per render instead of on every layout pass that sizes it and again when it paints, and once across renders while the renderer's resource cache holds it; PDF renders share one parse across their pages and bands.

@@ -133,6 +133,7 @@ impl Painter {
         .fonts(&state)
         .node(node)
         .images(images)
+        .resource_cache(self.resource_cache.clone())
         .stylesheet(stylesheet(&self.resource_cache, options.css, Vec::new()).map_err(map_error)?)
         .font_families(options.font_families.map(FontFamily::from_names))
         .lang(lang)

@@ -166,6 +166,7 @@ impl PdfRenderer {
       node,
       stylesheet: stylesheet(&self.resource_cache, options.css, Vec::new()).map_err(map_error)?,
       images,
+      resource_cache: Some(self.resource_cache.clone()),
       page,
       page_ranges: options
         .page_ranges
@@ -222,6 +223,7 @@ impl PdfRenderer {
       node,
       stylesheet: stylesheet(&self.resource_cache, options.css, Vec::new()).map_err(map_error)?,
       images,
+      resource_cache: Some(self.resource_cache.clone()),
       page,
       font_families: options.font_families.map(FontFamily::from_names),
       lang,
