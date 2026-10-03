@@ -23,6 +23,18 @@ merged. Every fix here is meant to go upstream; drop its commit once it lands.
   its device space, so a picture under `scale()` at a fractional position
   draws on the pixel grid instead of a fraction off and blurred. Regressed
   upstream in #1780.
+- **A font-family stack expands once per render** (`takumi-core`,
+  `font_style.rs`, `context.rs`): instead of once per text run, strut and
+  decoration, each a copy of every registered subset slice's name. Regressed
+  upstream in #1774, which added the per-box strut metrics: a maths page's
+  thumbnail laid out 40-50% slower than on 2.13.5.
+- **An inline image parses once per render, and once per renderer cache**
+  (`takumi-core`, `layout/node/image.rs`, `context.rs`, and every binding): a
+  data URI, SVG markup or raw bytes in `src` resolved through the render
+  context's table and the renderer's `ResourceCache`, not re-parsed by each
+  layout pass and the paint; takumi-pdf shares one cache across pages. A
+  `currentColor` SVG keeps its re-parse per host color. A maths page (formulas
+  as SVG data URIs) draws ~5x faster, its PDF ~3x, output byte-identical.
 - **takumi-pdf's wasm is built for speed** (`takumi-pdf-js/speed.toml`): the
   release profile's size overrides on the PDF graph go back to opt-level 3 for
   this build only, and the release builds std without `optimize_for_size`.
