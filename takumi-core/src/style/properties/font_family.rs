@@ -9,7 +9,7 @@ use crate::style::{
 
 /// Represents a font family for text rendering.
 /// Multi value fallback is supported.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FontFamily(Arc<[FontFamilyToken]>);
 
 impl Default for FontFamily {
@@ -19,7 +19,7 @@ impl Default for FontFamily {
 }
 
 /// One entry in a font-family fallback list.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum FontFamilyToken {
   /// A named family.
   Owned(String),
@@ -49,6 +49,12 @@ impl FontFamily {
       FontFamilyToken::Owned(name) => FontFamilyName::Named(name.as_str().into()),
       FontFamilyToken::Generic(generic) => FontFamilyName::Generic(*generic),
     })
+  }
+
+  /// Whether `other` is this very list, not merely an equal one: a style inherits its
+  /// parent's list by sharing it.
+  pub(crate) fn is_same(&self, other: &Self) -> bool {
+    Arc::ptr_eq(&self.0, &other.0)
   }
 
   pub(crate) fn from_parlance_generic(generic: GenericFamily) -> Self {

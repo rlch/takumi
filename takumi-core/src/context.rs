@@ -8,6 +8,7 @@ use std::{
 use typed_builder::TypedBuilder;
 
 use crate::{
+  font_style::ExpandedFontFamily,
   geometry::{ComputedLayout, Point},
   layout::inline::{InlineLayoutCache, MeasureCache, ShapeCache},
   resources::{
@@ -15,7 +16,8 @@ use crate::{
     image::ImageSource,
   },
   style::{
-    Affine, AppliedTextDecorations, Color, ComputedStyle, SizingContext, StyleSheet, TwCache,
+    Affine, AppliedTextDecorations, Color, ComputedStyle, FontFamily, SizingContext, StyleSheet,
+    TwCache,
   },
 };
 
@@ -27,6 +29,10 @@ struct RenderShared {
   inline_cache: InlineLayoutCache,
   tw_cache: TwCache,
   primary_font_metrics: RefCell<HashMap<u64, Option<PrimaryFontMetrics>>>,
+  /// Each `font-family` stack the render met, expanded once.
+  expanded_families: RefCell<HashMap<FontFamily, ExpandedFontFamily>>,
+  /// The stack last expanded: a style inherits its parent's, so the next ask is usually it.
+  last_expanded_family: RefCell<Option<(FontFamily, ExpandedFontFamily)>>,
   time_ms: u64,
   draw_debug_border: bool,
   dither_gradients: bool,
@@ -75,6 +81,8 @@ impl From<RenderContextInit> for RenderContext {
         inline_cache: InlineLayoutCache::new(init.shape_cache, init.measure_cache),
         tw_cache: TwCache::default(),
         primary_font_metrics: RefCell::new(HashMap::new()),
+        expanded_families: RefCell::new(HashMap::new()),
+        last_expanded_family: RefCell::new(None),
         time_ms: init.time_ms,
         draw_debug_border: init.draw_debug_border,
         dither_gradients: init.dither_gradients,
@@ -167,6 +175,30 @@ impl RenderContext {
   /// Per-render cache of expanded Tailwind class lists.
   pub(crate) fn tw_cache(&self) -> &TwCache {
     &self.shared.tw_cache
+  }
+
+  /// `family` as `expand` expands it, expanded once per render.
+  pub(crate) fn cached_expanded_family(
+    &self,
+    family: &FontFamily,
+    expand: impl FnOnce() -> ExpandedFontFamily,
+  ) -> ExpandedFontFamily {
+    if let Some((last, expanded)) = self.shared.last_expanded_family.borrow().as_ref()
+      && last.is_same(family)
+    {
+      return expanded.clone();
+    }
+
+    let expanded = self
+      .shared
+      .expanded_families
+      .borrow_mut()
+      .entry(family.clone())
+      .or_insert_with(expand)
+      .clone();
+
+    *self.shared.last_expanded_family.borrow_mut() = Some((family.clone(), expanded.clone()));
+    expanded
   }
 
   /// The primary font metrics for `key`, resolved once per render.
