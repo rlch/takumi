@@ -35,6 +35,11 @@ merged. Every fix here is meant to go upstream; drop its commit once it lands.
   layout pass and the paint; takumi-pdf shares one cache across pages. A
   `currentColor` SVG keeps its re-parse per host color. A maths page (formulas
   as SVG data URIs) draws ~5x faster, its PDF ~3x, output byte-identical.
+- **Render and measure from one layout pass** (`takumi-raster`, `takumi-svg`,
+  napi, wasm): `renderWithMeasure` / `renderSvgWithMeasure` return the image or
+  SVG and the `MeasuredNode`, laying the tree out once where `measure` then
+  `render` lay it out twice. Output and measured tree identical to the two
+  calls (a test holds every HTML fixture to it).
 - **takumi-pdf's wasm is built for speed** (`takumi-pdf-js/speed.toml`): the
   release profile's size overrides on the PDF graph go back to opt-level 3 for
   this build only, and the release builds std without `optimize_for_size`.
