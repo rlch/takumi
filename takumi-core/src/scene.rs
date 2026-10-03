@@ -377,18 +377,24 @@ impl SceneRequest<'_> {
         layout.size.height,
         &current.context.sizing,
       );
+      let translation = current
+        .context
+        .style
+        .paint_offset_after_translation(visit.base.paint_offset + layout.location, local_transform);
+      // Blink's paint offset translation moves the box by its rounded paint offset, so the
+      // fraction it drops (under a scale, say) moves nothing the box paints.
       let mut current_transform = visit.base.transform;
-      current_transform *= Affine::translation(layout.location.x, layout.location.y);
+      current_transform *= Affine::translation(
+        layout.location.x - translation.dropped.x,
+        layout.location.y - translation.dropped.y,
+      );
       current_transform *= local_transform;
       if !current_transform.is_invertible() {
         continue;
       }
       let child_base = ChildBase {
         transform: current_transform,
-        paint_offset: current.context.style.paint_offset_after_translation(
-          visit.base.paint_offset + layout.location,
-          local_transform,
-        ),
+        paint_offset: translation.paint_offset,
       };
       containing_blocks.record_placement(visit.node_id, child_base);
 
@@ -1100,7 +1106,7 @@ fn merge_bounds(left: Option<SceneBounds>, right: Option<SceneBounds>) -> Option
 mod tests {
   use std::sync::Arc;
 
-  use super::{Scene, SceneBounds, merge_bounds};
+  use super::{PaintItemKind, Scene, SceneBounds, merge_bounds};
   use crate::{
     context::RenderContext,
     geometry::{Point, Size},
@@ -1132,6 +1138,70 @@ mod tests {
     let marker = item.marker.as_deref().expect("marker");
 
     assert_eq!(marker.context.paint_offset, Point { x: 10.5, y: 10.5 });
+  }
+
+  /// The device transform the box at `path` paints under.
+  fn paint_transform(scene: &Scene, path: &[usize]) -> Affine {
+    scene
+      .contexts
+      .iter()
+      .flat_map(|context| {
+        let items = context.in_paint_order().into_iter().flatten();
+        context
+          .root()
+          .into_iter()
+          .chain(items.filter_map(|item| match &item.kind {
+            PaintItemKind::Node(paint) => Some(paint),
+            _ => None,
+          }))
+      })
+      .find(|paint| paint.path == path)
+      .expect("the box paints")
+      .transform
+  }
+
+  #[test]
+  fn a_scaled_box_drops_the_fraction_of_its_paint_offset() {
+    let viewport = Viewport::new((200, 200));
+    let stylesheet = StyleSheet::parse(
+      ".frame { display: block; padding-top: 10.25px } \
+       .box { display: block; width: 40px; height: 40px; transform-origin: top left } \
+       .scaled { transform: scale(0.5) } \
+       .moved { transform: translateX(1px) }",
+    )
+    .expect("stylesheet parses");
+    let context = RenderContext::builder()
+      .fonts(Fonts::default().snapshot())
+      .sizing(SizingContext::builder().viewport(viewport).build())
+      .stylesheet(Arc::new(stylesheet))
+      .build();
+    let frame = Node::container([
+      Node::container([]).with_class_name("box scaled"),
+      Node::container([]).with_class_name("box moved"),
+    ])
+    .with_class_name("frame");
+
+    let scene = Scene::lay_out(RenderNode::from_node(&context, frame), viewport, false)
+      .expect("scene lays out");
+
+    // Blink rounds the paint offset into the translation and drops the 0.25px a scale cannot
+    // carry, so the scaled box paints from y = 10 (`CanPropagateSubpixelAccumulation`).
+    assert_eq!(
+      paint_transform(&scene, &[0]),
+      Affine {
+        a: 0.5,
+        b: 0.0,
+        c: 0.0,
+        d: 0.5,
+        x: 0.0,
+        y: 10.0,
+      }
+    );
+    // A translation carries the fraction: the moved box paints from y = 50.25.
+    assert_eq!(
+      paint_transform(&scene, &[1]),
+      Affine::translation(1.0, 50.25)
+    );
   }
 
   #[test]
