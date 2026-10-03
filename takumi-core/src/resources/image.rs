@@ -79,6 +79,10 @@ pub enum ImageSource {
   Encoded(Arc<EncodedBitmap>),
 }
 
+/// A `currentColor` re-parse and the host color and font revision it was made for.
+#[cfg(feature = "svg")]
+type RecoloredTree = (([u8; 4], Option<u64>), Arc<Tree>);
+
 /// The resolved SVG source. Without the `svg` feature it holds the markup and its
 /// root-element size only, so it lays out but cannot be drawn.
 #[cfg(feature = "svg-sizing")]
@@ -102,6 +106,10 @@ pub struct SvgSource {
   /// it was converted with; a registration re-converts on the next render.
   #[cfg(feature = "svg")]
   text_tree: Mutex<Option<(u64, Arc<Tree>)>>,
+  /// The `currentColor` re-parse, keyed by the host color and, with `<text>`, the font
+  /// revision.
+  #[cfg(feature = "svg")]
+  recolored: Mutex<Option<RecoloredTree>>,
   #[cfg(feature = "svg")]
   hash: u64,
   #[cfg(feature = "svg")]
@@ -221,22 +229,46 @@ impl SvgSource {
     Tree::from_xmltree(&document, &options).ok()
   }
 
-  /// Re-parses the markup with `current_color` as the `currentColor` fallback.
-  /// `None` when rendering does not depend on the host color.
+  /// The markup parsed with `current_color` as the `currentColor` fallback, kept for the color
+  /// (and, with `<text>`, the font revision) it was last asked for, so a source drawn in one
+  /// color parses once rather than once per draw. `None` when rendering does not depend on the
+  /// host color.
   fn tree_with_current_color(
     &self,
     current_color: Color,
     fonts: Option<&FontsSnapshot>,
-  ) -> Option<Tree> {
+  ) -> Option<Arc<Tree>> {
     if !self.uses_current_color {
       return None;
     }
 
-    let [red, green, blue, alpha] = current_color.0;
+    let key = (
+      current_color.0,
+      fonts.filter(|_| self.has_text).map(FontsSnapshot::revision),
+    );
+    let reparse = || {
+      let [red, green, blue, alpha] = current_color.0;
 
-    self.reparse(fonts, |options| {
-      options.current_color = Some(svgtypes::Color::new_rgba(red, green, blue, alpha));
-    })
+      self
+        .reparse(fonts, |options| {
+          options.current_color = Some(svgtypes::Color::new_rgba(red, green, blue, alpha));
+        })
+        .map(Arc::new)
+    };
+    let Ok(mut cached) = self.recolored.lock() else {
+      return reparse();
+    };
+
+    if let Some((cached_key, tree)) = cached.as_ref()
+      && *cached_key == key
+    {
+      return Some(tree.clone());
+    }
+
+    let tree = reparse()?;
+
+    *cached = Some((key, tree.clone()));
+    Some(tree)
   }
 
   /// Parses SVG markup; rasterized pixmaps go into `cache` while it is alive,
@@ -264,6 +296,7 @@ impl SvgSource {
       tree,
       uses_current_color,
       text_tree: Mutex::new(None),
+      recolored: Mutex::new(None),
       hash,
       cache,
     })
@@ -310,7 +343,7 @@ impl SvgSource {
 
     render_svg_tree(
       recolored
-        .as_ref()
+        .as_deref()
         .or(text_tree.as_deref())
         .unwrap_or(&self.tree),
       Transform::from_scale(sx, sy),
@@ -1235,6 +1268,25 @@ mod resource_cache_tests {
 
     let (first, second) = (rendered_raster(&a, 4, 4), rendered_raster(&b, 4, 4));
     assert!(Arc::ptr_eq(&first, &second));
+  }
+
+  /// A source that draws in `currentColor` parses again with the host color: once per color,
+  /// not once per raster or vector draw.
+  #[cfg(feature = "svg")]
+  #[test]
+  fn a_current_color_source_parses_once_per_color() {
+    let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1" fill="currentColor"/></svg>"#;
+    let Ok(ImageSource::Svg(source)) = ImageSource::from_bytes(svg) else {
+      panic!("expected an svg");
+    };
+    let red = Color([255, 0, 0, 255]);
+    let drawn = |color| source.tree_with_current_color(color, None).unwrap();
+
+    let black = drawn(Color::black());
+
+    assert!(Arc::ptr_eq(&black, &drawn(Color::black())));
+    assert!(!Arc::ptr_eq(&black, &drawn(red)));
+    assert!(Arc::ptr_eq(&drawn(red), &drawn(red)));
   }
 
   #[cfg(feature = "svg")]
