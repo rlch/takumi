@@ -50,6 +50,18 @@ export class Renderer {
     return this.inner.renderSvg(node, opts, signal);
   }
 
+  /** Renders an image and measures its layout from one layout pass: `render`'s image, `measure`'s tree. */
+  async renderWithMeasure(node: Node, options?: RenderOptions) {
+    const { options: opts, signal } = await prepareRenderInput(this.fonts, options ?? {}, node);
+    return this.inner.renderWithMeasure(node, opts, signal);
+  }
+
+  /** Renders an SVG and measures its layout from one layout pass: `renderSvg`'s SVG, `measure`'s tree. */
+  async renderSvgWithMeasure(node: Node, options?: SvgRenderOptions) {
+    const { options: opts, signal } = await prepareRenderInput(this.fonts, options ?? {}, node);
+    return this.inner.renderSvgWithMeasure(node, opts, signal);
+  }
+
   async measure(node: Node, options?: RenderOptions) {
     const { options: opts, signal } = await prepareRenderInput(this.fonts, options ?? {}, node);
     return this.inner.measure(node, opts, signal);

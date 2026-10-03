@@ -7,13 +7,13 @@ use takumi_core::{
   style::{FontFamily, Lang, StyleSheet},
   viewport::Viewport,
 };
-use takumi_raster::{DitheringAlgorithm, render, write_image};
+use takumi_raster::{Bitmap, DitheringAlgorithm, render, render_with_measure, write_image};
 
 use crate::{
   JsBytes, map_error,
   renderer::{
-    ImageCacheMode, OutputFormat, RenderOptions, RendererState, collect_images, decode_images,
-    deserialize_css, deserialize_keyframes,
+    ImageCacheMode, OutputFormat, RenderOptions, RenderedWithMeasure, RendererState,
+    collect_images, decode_images, deserialize_css, deserialize_keyframes,
   },
 };
 
@@ -67,11 +67,12 @@ impl RenderTask {
   }
 }
 
-impl Task for RenderTask {
-  type Output = Vec<u8>;
-  type JsValue = Buffer;
-
-  fn compute(&mut self) -> Result<Self::Output> {
+impl RenderTask {
+  /// Runs `draw` over this task's raster options. Takes the node, so it runs once.
+  fn draw<T>(
+    &mut self,
+    draw: impl FnOnce(takumi_raster::RenderOptions) -> takumi_core::Result<T>,
+  ) -> Result<T> {
     let Some(node) = self.node.take() else {
       unreachable!()
     };
@@ -80,7 +81,7 @@ impl Task for RenderTask {
 
     let initialized_images = decode_images(&self.state.resource_cache, take(&mut self.images))?;
 
-    let image = render(
+    draw(
       takumi_raster::RenderOptions::builder()
         .viewport(self.viewport)
         .images(initialized_images)
@@ -94,8 +95,11 @@ impl Task for RenderTask {
         .draw_debug_border(self.draw_debug_border)
         .build(),
     )
-    .map_err(map_error)?;
+    .map_err(map_error)
+  }
 
+  /// Encodes `image` in this task's output format.
+  fn encode(&self, image: Bitmap) -> Result<Vec<u8>> {
     if self.format == OutputFormat::Raw {
       return Ok(image.into_raw());
     }
@@ -113,8 +117,40 @@ impl Task for RenderTask {
 
     Ok(buffer)
   }
+}
+
+impl Task for RenderTask {
+  type Output = Vec<u8>;
+  type JsValue = Buffer;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    let image = self.draw(render)?;
+
+    self.encode(image)
+  }
 
   fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
     Ok(output.into())
+  }
+}
+
+/// A [`RenderTask`] that also returns the measured layout, from the same layout pass.
+pub struct RenderWithMeasureTask(pub(crate) RenderTask);
+
+impl Task for RenderWithMeasureTask {
+  type Output = (Vec<u8>, takumi_raster::MeasuredNode);
+  type JsValue = RenderedWithMeasure;
+
+  fn compute(&mut self) -> Result<Self::Output> {
+    let (image, measured) = self.0.draw(render_with_measure)?;
+
+    Ok((self.0.encode(image)?, measured))
+  }
+
+  fn resolve(&mut self, _env: Env, (image, measured): Self::Output) -> Result<Self::JsValue> {
+    Ok(RenderedWithMeasure {
+      image: image.into(),
+      measured: measured.into(),
+    })
   }
 }

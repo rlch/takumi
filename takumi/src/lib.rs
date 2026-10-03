@@ -84,11 +84,11 @@ pub mod prelude {
 pub use takumi_html::from_html;
 #[cfg(feature = "raster-backend")]
 pub use takumi_raster::{
-  measure, render, render_animation, write_animated_gif, write_animated_png, write_animated_webp,
-  write_animation, write_image,
+  measure, render, render_animation, render_with_measure, write_animated_gif, write_animated_png,
+  write_animated_webp, write_animation, write_image,
 };
 #[cfg(feature = "svg-backend")]
-pub use takumi_svg::render as render_svg;
+pub use takumi_svg::{render as render_svg, render_with_measure as render_svg_with_measure};
 
 /// Unstable, semver-exempt access to the backend crates in full.
 ///

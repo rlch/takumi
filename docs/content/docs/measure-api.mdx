@@ -28,6 +28,23 @@ const { width, height } = await renderer.measure(node, { css }); // [!code highl
 //      ^?
 ```
 
+## Measure and render in one pass
+
+To draw a node and also read its layout, call `renderWithMeasure()` (or `renderSvgWithMeasure()`)
+instead of `measure()` then `render()`. The node is laid out once for both: the image is the one
+`render()` returns for the same options, and `measured` the tree `measure()` returns.
+
+```tsx twoslash title="Render and measure together"
+import { Renderer } from "takumi-js/node";
+import { fromJsx } from "takumi-js/helpers/jsx";
+
+const renderer = new Renderer();
+const { node, css } = await fromJsx(<span tw="text-xl">I'm a text node</span>);
+
+const { image, measured } = await renderer.renderWithMeasure(node, { css, format: "png" }); // [!code highlight]
+const { svg } = await renderer.renderSvgWithMeasure(node, { css });
+```
+
 ## Returned fields
 
 `measure()` resolves to a `MeasuredNode`.
