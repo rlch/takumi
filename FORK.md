@@ -40,6 +40,12 @@ merged. Every fix here is meant to go upstream; drop its commit once it lands.
   SVG and the `MeasuredNode`, laying the tree out once where `measure` then
   `render` lay it out twice. Output and measured tree identical to the two
   calls (a test holds every HTML fixture to it).
+- **A measured text run reports its font size** (`takumi-core`,
+  `layout/measure.rs`, napi, wasm): `MeasuredTextRun.fontSize` is the size the
+  run was shaped at, after inheritance and the cascade, in device pixels
+  (times `devicePixelRatio`) and with text-fit line scaling applied, as
+  `height` is; a CSS `transform` stays in the node's `transform`. A caller can
+  read a run's type size without re-resolving the styles.
 - **A box that ends past the content window moves to the next page**
   (`takumi-pdf`, `pagination.rs`): a page cut landed on any content edge within
   a pixel of it, so a box ending up to a pixel past the window stayed on the
