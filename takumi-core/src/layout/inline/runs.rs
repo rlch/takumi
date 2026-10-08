@@ -653,6 +653,8 @@ pub struct MeasuredInlineRun<'a> {
   pub width: f32,
   /// Run height.
   pub height: f32,
+  /// Font size the run draws at, with text-fit line scaling applied.
+  pub font_size: f32,
   /// URI of the nearest enclosing anchor's `href`, if any.
   pub link: Option<&'a str>,
 }

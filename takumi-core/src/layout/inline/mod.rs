@@ -414,6 +414,7 @@ impl BuiltInlineLayout<'_> {
             y: origin.y,
             width: size.width,
             height: size.height,
+            font_size: glyph_run.run().font_size() * setup.state.scale,
             link,
           });
         }

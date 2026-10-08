@@ -33,6 +33,8 @@ pub struct MeasuredTextRun {
   pub width: f32,
   /// The height of the run.
   pub height: f32,
+  /// The font size the run draws at.
+  pub font_size: f32,
 }
 
 /// The result of a layout measurement.
@@ -277,6 +279,7 @@ fn measure_inline(
       y: run.y,
       width: run.width,
       height: run.height,
+      font_size: run.font_size,
     })
     .collect();
 

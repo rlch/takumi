@@ -44,6 +44,8 @@ pub struct MeasuredTextRun {
   pub width: f64,
   /// The height of the run.
   pub height: f64,
+  /// The font size the run draws at.
+  pub font_size: f64,
 }
 
 impl From<takumi_raster::MeasuredTextRun> for MeasuredTextRun {
@@ -54,6 +56,7 @@ impl From<takumi_raster::MeasuredTextRun> for MeasuredTextRun {
       y: run.y as f64,
       width: run.width as f64,
       height: run.height as f64,
+      font_size: run.font_size as f64,
     }
   }
 }

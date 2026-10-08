@@ -255,6 +255,7 @@ export type MeasuredTextRun = {
   y: number;
   width: number;
   height: number;
+  fontSize: number;
 };
 
 export type MeasuredNode = {

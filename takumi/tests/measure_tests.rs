@@ -67,6 +67,7 @@ fn assert_text_runs_same(actual: &[MeasuredTextRun], expected: &[MeasuredTextRun
     assert_within(actual.y, expected.y, 0.05);
     assert_within(actual.width, expected.width, 0.05);
     assert_within(actual.height, expected.height, 0.05);
+    assert_within(actual.font_size, expected.font_size, 0.05);
   }
 }
 
@@ -139,6 +140,7 @@ fn test_measure_text_node() {
           y: -0.10000038,
           width: 105.46001,
           height: 26.0,
+          font_size: 20.0,
         }],
       }],
       runs: Vec::new(),
@@ -2662,4 +2664,53 @@ fn cell_runs(node: &MeasuredNode) -> Vec<&MeasuredTextRun> {
     .iter()
     .chain(node.children.iter().flat_map(cell_runs))
     .collect()
+}
+
+/// The font size of each text run under `node`, by its text.
+fn run_font_sizes(node: &MeasuredNode) -> Vec<(String, f32)> {
+  node
+    .runs
+    .iter()
+    .map(|run| (run.text.clone(), run.font_size))
+    .chain(node.children.iter().flat_map(run_font_sizes))
+    .collect()
+}
+
+fn measure_font_sizes(device_pixel_ratio: f32) -> Vec<(String, f32)> {
+  let node = Node::from_html(
+    r#"<div><p class="small"><span>small</span></p><p style="font-size:22px">large</p><p class="small led">led</p></div>"#,
+    FromHtmlOptions::default(),
+  )
+  .expect("parse");
+  let measured = takumi::measure(
+    RenderOptions::builder()
+      .viewport(create_measure_viewport_with_dpr(device_pixel_ratio))
+      .node(node)
+      .stylesheet(
+        StyleSheet::parse_loosy(".small { font-size: 14px } .led { line-height: 1.6 }").into(),
+      )
+      .fonts(&CONTEXT)
+      .build(),
+  )
+  .unwrap();
+
+  run_font_sizes(&measured)
+}
+
+/// A run reports the font size it was shaped at, inherited or from a class or an inline style, in
+/// device pixels, whatever its line height.
+#[test]
+fn test_measure_run_reports_its_font_size() {
+  for (device_pixel_ratio, expected) in [
+    (1.0, [("small", 14.0), ("large", 22.0), ("led", 14.0)]),
+    (2.0, [("small", 28.0), ("large", 44.0), ("led", 28.0)]),
+  ] {
+    let sizes = measure_font_sizes(device_pixel_ratio);
+
+    assert_eq!(sizes.len(), expected.len(), "{sizes:?}");
+    for ((text, size), (expected_text, expected_size)) in sizes.iter().zip(expected) {
+      assert_eq!(text, expected_text);
+      assert_close(*size, expected_size);
+    }
+  }
 }
