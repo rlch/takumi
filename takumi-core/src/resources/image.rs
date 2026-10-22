@@ -68,7 +68,9 @@ fn raster_within_budget(width: u32, height: u32) -> (u32, u32) {
     return (width, height);
   }
   let scale = (MAX_RASTER_PIXELS as f64 / (f64::from(width) * f64::from(height))).sqrt();
-  let fitted_width = ((f64::from(width) * scale) as u32).max(1);
+  let fitted_width = ((f64::from(width) * scale) as u32)
+    .max(1)
+    .min(MAX_RASTER_PIXELS as u32);
   let fitted_height = ((f64::from(height) * scale) as u32)
     .max(1)
     .min((MAX_RASTER_PIXELS / u64::from(fitted_width)) as u32);
