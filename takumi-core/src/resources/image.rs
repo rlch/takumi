@@ -60,6 +60,21 @@ fn within_raster_pixel_budget(width: u32, height: u32) -> bool {
   u64::from(width) * u64::from(height) <= MAX_RASTER_PIXELS
 }
 
+/// The largest raster within [`MAX_RASTER_PIXELS`] of a `width` x `height` box's shape: the box
+/// itself when it fits, else both sides scaled down by one factor, never below a pixel.
+#[cfg(feature = "svg")]
+fn raster_within_budget(width: u32, height: u32) -> (u32, u32) {
+  if within_raster_pixel_budget(width, height) {
+    return (width, height);
+  }
+  let scale = (MAX_RASTER_PIXELS as f64 / (f64::from(width) * f64::from(height))).sqrt();
+  let fitted_width = ((f64::from(width) * scale) as u32).max(1);
+  let fitted_height = ((f64::from(height) * scale) as u32)
+    .max(1)
+    .min((MAX_RASTER_PIXELS / u64::from(fitted_width)) as u32);
+  (fitted_width, fitted_height)
+}
+
 /// Represents the state of an image resource.
 pub(crate) type ImageResult = Result<ImageSource, ImageError>;
 
@@ -649,14 +664,34 @@ impl ImageSource {
           source_scale,
         })
       }
+      // A box over the raster budget draws the SVG at the largest size within it, sampled up
+      // over the box as an encoded bitmap is: a page with a huge vector box draws it softer
+      // rather than failing.
       #[cfg(feature = "svg")]
-      ImageSource::Svg(svg) => Ok(RenderedImage::Rasterized(svg.rasterize_cached(
-        width,
-        height,
-        image_rendering,
-        current_color,
-        fonts,
-      )?)),
+      ImageSource::Svg(svg) => {
+        let (raster_width, raster_height) = raster_within_budget(width, height);
+        let raster = svg.rasterize_cached(
+          raster_width,
+          raster_height,
+          image_rendering,
+          current_color,
+          fonts,
+        )?;
+        if (raster_width, raster_height) == (width, height) {
+          return Ok(RenderedImage::Rasterized(raster));
+        }
+        let (native_width, native_height) = svg.dimensions();
+        Ok(RenderedImage::Sampled {
+          source: raster,
+          width,
+          height,
+          algorithm: image_rendering,
+          source_scale: (
+            raster_width as f32 / native_width,
+            raster_height as f32 / native_height,
+          ),
+        })
+      }
       #[cfg(all(feature = "svg-sizing", not(feature = "svg")))]
       ImageSource::Svg(_) => Err(ImageError::SvgParseNotSupported),
     }
@@ -1248,6 +1283,40 @@ mod resource_cache_tests {
       (ImageSource::Bitmap(x), ImageSource::Bitmap(y)) => assert!(!Arc::ptr_eq(x, y)),
       _ => panic!("expected bitmaps"),
     }
+  }
+
+  /// A box over the raster budget draws, from a raster within it that covers the whole SVG.
+  #[cfg(feature = "svg")]
+  #[test]
+  fn an_svg_box_over_the_raster_budget_draws_within_it() {
+    let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="red"/></svg>"#;
+    let source = ImageSource::from_bytes(svg).unwrap();
+
+    let rendered = source
+      .render_for_layout(
+        9000,
+        9000,
+        ImageScalingAlgorithm::Auto,
+        0,
+        Color::black(),
+        None,
+      )
+      .unwrap();
+
+    let RenderedImage::Sampled {
+      source,
+      width,
+      height,
+      source_scale,
+      ..
+    } = rendered
+    else {
+      panic!("expected sampled");
+    };
+    assert_eq!((width, height), (9000, 9000));
+    assert!(u64::from(source.width()) * u64::from(source.height()) <= super::MAX_RASTER_PIXELS);
+    assert_eq!(source.width(), source.height());
+    assert_eq!(source_scale.0, source.width() as f32 / 10.0);
   }
 
   #[cfg(feature = "svg")]
@@ -2193,26 +2262,6 @@ mod tests {
     assert_eq!(height, 4);
     assert_matches!(algo, ImageScalingAlgorithm::Pixelated);
     Ok(())
-  }
-
-  #[cfg(feature = "svg")]
-  #[test]
-  fn svg_rasterization_rejects_oversized_target() {
-    let source: ImageSource = "<svg width=\"1\" height=\"1\"/>"
-      .parse::<SvgSource>()
-      .unwrap()
-      .into();
-
-    let result = source.render_for_layout(
-      8193,
-      8192,
-      ImageScalingAlgorithm::Auto,
-      0,
-      Color::black(),
-      None,
-    );
-
-    assert_matches!(result, Err(ImageError::InvalidPixmapSize));
   }
 
   #[cfg(feature = "gif")]

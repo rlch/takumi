@@ -51,6 +51,13 @@ merged. Every fix here is meant to go upstream; drop its commit once it lands.
   a pixel of it, so a box ending up to a pixel past the window stayed on the
   page and overfilled it (a worksheet's sheet held 1048 px on a 1047 px area).
   An edge past the window takes the cut only within a layout unit (1/64px).
+- **An SVG box over the raster budget draws within it** (`takumi-core`,
+  `resources/image.rs`; `takumi-raster`, `background_drawing.rs`): an SVG is
+  rasterised at its CSS box, and upstream's #1126 refuses a box over 64 Mpx,
+  failing the whole render. A box over the budget now rasterises the SVG at the
+  largest size within it, keeping the box's shape, and samples it over the box
+  as an encoded bitmap is; the budget still bounds the allocation. A background
+  tile over it is sampled the same way instead of dropped.
 - **takumi-pdf's wasm is built for speed** (`takumi-pdf-js/speed.toml`): the
   release profile's size overrides on the PDF graph go back to opt-level 3 for
   this build only, and the release builds std without `optimize_for_size`.

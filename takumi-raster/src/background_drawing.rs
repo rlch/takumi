@@ -571,7 +571,13 @@ pub(crate) fn render_tile(
           RenderedImage::Rasterized(buffer) => {
             pixmap_from_buffer(&buffer).map(|pixmap| BackgroundTile::Pixmap(Arc::new(pixmap)))
           }
-          RenderedImage::Sampled { .. } => None,
+          // A tile over the raster budget, drawn smaller and sampled up over the tile.
+          RenderedImage::Sampled { source, .. } => Some(BackgroundTile::SampledBitmap {
+            source,
+            width: tile_w,
+            height: tile_h,
+            algo: context.style.image_rendering,
+          }),
         },
         _ => None,
       }
