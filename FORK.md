@@ -58,6 +58,12 @@ merged. Every fix here is meant to go upstream; drop its commit once it lands.
   largest size within it, keeping the box's shape, and samples it over the box
   as an encoded bitmap is; the budget still bounds the allocation. A background
   tile over it is sampled the same way instead of dropped.
+- **Inline content breaks against a width snapped to 1/64 px**
+  (`takumi-core`, `layout/inline/breaking.rs`): a shrink-to-fit inline-block
+  is laid out at its measured width, and the insets came off it in f32, so its
+  content box could come out an ulp short and wrap (a formula image in 0.04em
+  padding dropped a line, and its row's baseline with it). The constraint is a
+  LayoutUnit now, as Blink's available inline size is.
 - **takumi-pdf's wasm is built for speed** (`takumi-pdf-js/speed.toml`): the
   release profile's size overrides on the PDF graph go back to opt-level 3 for
   this build only, and the release builds std without `optimize_for_size`.
