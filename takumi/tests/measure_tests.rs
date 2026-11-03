@@ -2714,3 +2714,33 @@ fn test_measure_run_reports_its_font_size() {
     }
   }
 }
+
+/// A shrink-to-fit inline-block is laid out at the width it measured, so its content box has to
+/// hold what it measured: an image in fractional padding stays on one line, and the flex row
+/// aligns to that line's baseline, at every width.
+#[test]
+fn test_measure_padded_inline_block_keeps_its_image_on_one_line() {
+  let png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMgAAACWCAYAAACb3McZAAAAHUlEQVR42u3BAQ0AAADCoPdPbQ8HFAAAAAAAAAB4DSMgAAGIL7gAAAAAAElFTkSuQmCC";
+  let mut dropped = Vec::new();
+
+  for step in 0..=(48 * 8) {
+    let width = 16.0 + step as f32 / 8.0;
+    let html = format!(
+      r#"<div style="display:flex;align-items:baseline;width:800px;font-size:16px;line-height:24px"><div style="display:inline-block;width:24px;height:24px;flex-shrink:0">A</div><div style="min-width:0">x <span style="display:inline-block;box-sizing:border-box;padding:0 0.04em"><img style="width:{width}px;height:16px" src="{png}"></span></div></div>"#
+    );
+    let out = measure(
+      Node::from_html(&html, FromHtmlOptions::default()).expect("parse"),
+      create_test_viewport(),
+    );
+    let (disc, body) = (&out.children[0], &out.children[1]);
+
+    if body.height > 24.5 || disc.transform[5].abs() > 0.5 {
+      dropped.push((width, body.height, disc.transform[5]));
+    }
+  }
+
+  assert!(
+    dropped.is_empty(),
+    "(image width, body height, disc y) off line one: {dropped:?}"
+  );
+}

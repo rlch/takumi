@@ -3,6 +3,7 @@
 use crate::{
   context::RenderContext,
   geometry::{AvailableSpace, Size},
+  layout_unit::LayoutUnit,
   style::{Length, TextWrapMode},
   text_processing::MaxHeight,
 };
@@ -85,6 +86,13 @@ pub(crate) fn create_inline_constraint(
         Length::from(context.style.border_right_width).to_px(sizing, 0.0)
       };
     width_constraint = (width_constraint - horizontal_insets).max(0.0);
+  }
+
+  // Blink holds the available inline size as a LayoutUnit, so a box laid out at the width it
+  // measured gets its content width back exactly; in f32 the insets can come off an ulp short
+  // and the content wraps.
+  if width_constraint.is_finite() {
+    width_constraint = LayoutUnit::from_f32_round(width_constraint).to_f32();
   }
 
   let max_height = match (
