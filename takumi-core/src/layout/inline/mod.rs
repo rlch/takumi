@@ -890,6 +890,8 @@ fn build_inline_layout_tree<'c>(
             kind: InlineBoxKind::InFlow,
             width: *width,
             height: 0.0,
+            // A span's padding is no break opportunity: the text on either side decides.
+            text_wrap_mode: None,
           },
           decorations: decorations.clone(),
         });
@@ -1046,8 +1048,9 @@ fn inline_box_span<'c>(
   } else {
     content_size.height + margin.vertical() + padding.vertical() + border.vertical()
   };
-  // Parley breaks the line after every box it places itself, while Blink never breaks at an
-  // out-of-flow object, so the line breaker takes these back and appends them without one.
+  // Blink never breaks at an out-of-flow object, so the line breaker takes these back and
+  // appends them without a break. An atomic inline breaks after itself under its own wrap mode,
+  // as Blink's `CanBreakAfterAtomicInline` reads `auto_wrap_` from the item's style.
   let inline_box = InlineBox {
     index,
     id,
@@ -1057,6 +1060,8 @@ fn inline_box_span<'c>(
     },
     width: paint_width,
     height: paint_height,
+    text_wrap_mode: (kind == InlineBoxKind::InFlow)
+      .then(|| context.style.resolved_text_wrap_mode().into_parley()),
   };
   let baseline_offset = raw_baseline_offset.map(|baseline| baseline.clamp(0.0, inline_box.height));
 

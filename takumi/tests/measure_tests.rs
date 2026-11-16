@@ -2773,3 +2773,32 @@ fn test_measure_nowrap_item_keeps_its_image_on_one_line() {
     "(image width, item height) past one line: {dropped:?}"
   );
 }
+
+/// An image breaks the line after it only under its own wrap mode: a nowrap image wider than its
+/// box keeps the text after it on its line, whether the box or only a span around it is nowrap.
+#[test]
+fn test_measure_nowrap_image_wider_than_its_box_keeps_the_text_after_it() {
+  let png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMgAAACWCAYAAACb3McZAAAAHUlEQVR42u3BAQ0AAADCoPdPbQ8HFAAAAAAAAAB4DSMgAAGIL7gAAAAAAElFTkSuQmCC";
+  let image = format!(r#"<img style="width:100px;height:34px" src="{png}">"#);
+  let boxes = [
+    format!(
+      r#"<div style="width:40px;font-size:14px;line-height:1.2;white-space:nowrap">{image}, then</div>"#
+    ),
+    format!(
+      r#"<div style="width:40px;font-size:14px;line-height:1.2"><span style="white-space:nowrap">{image}</span>,</div>"#
+    ),
+  ];
+
+  for html in boxes {
+    let out = measure(
+      Node::from_html(&html, FromHtmlOptions::default()).expect("parse"),
+      create_test_viewport(),
+    );
+
+    assert!(
+      out.height < 40.0,
+      "{html} took {} px, past one line",
+      out.height
+    );
+  }
+}

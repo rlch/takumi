@@ -16,7 +16,7 @@ members = [
 ]
 # cargo doesn't need this. tegami reads every Cargo.toml under a member, so
 # @napi-rs/cli's vendored `napi-derive` fixture crate shadows the real dependency.
-exclude = ["**/node_modules/**"]
+exclude = ["**/node_modules/**", "vendor/parley"]
 
 [workspace.dependencies]
 arc-swap = "1"
@@ -280,3 +280,7 @@ opt-level = "z"
 skrifa = { git = "https://github.com/kane50613/fontations", rev = "caf93ec16d8e0f268da88dbdedd2fb21d7191170" }
 read-fonts = { git = "https://github.com/kane50613/fontations", rev = "caf93ec16d8e0f268da88dbdedd2fb21d7191170" }
 font-types = { git = "https://github.com/kane50613/fontations", rev = "caf93ec16d8e0f268da88dbdedd2fb21d7191170" }
+
+# parley 0.11.1 with one fix (vendor/parley, FORK.md): an inline box breaks the line after it only
+# under its own wrap mode, as a text cluster does, instead of always.
+parley = { path = "vendor/parley" }
