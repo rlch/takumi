@@ -2744,3 +2744,32 @@ fn test_measure_padded_inline_block_keeps_its_image_on_one_line() {
     "(image width, body height, disc y) off line one: {dropped:?}"
   );
 }
+
+/// A box is laid out at the width it measured, so its content stays on one line in every wrap
+/// mode: a nowrap flex item holding an image is one line tall at every width.
+#[test]
+fn test_measure_nowrap_item_keeps_its_image_on_one_line() {
+  let png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMgAAACWCAYAAACb3McZAAAAHUlEQVR42u3BAQ0AAADCoPdPbQ8HFAAAAAAAAAB4DSMgAAGIL7gAAAAAAElFTkSuQmCC";
+  let mut dropped = Vec::new();
+
+  for step in 0..=1600 {
+    let width = 8.0 + step as f32 / 100.0;
+    let html = format!(
+      r#"<div style="display:flex;align-items:center;width:200px;height:120px;font-size:14px;line-height:1.2"><span style="flex-shrink:0;white-space:nowrap"><img style="width:{width}px;height:34px" src="{png}"></span></div>"#
+    );
+    let out = measure(
+      Node::from_html(&html, FromHtmlOptions::default()).expect("parse"),
+      create_test_viewport(),
+    );
+    let item = &out.children[0];
+
+    if item.height > 40.0 {
+      dropped.push((width, item.height));
+    }
+  }
+
+  assert!(
+    dropped.is_empty(),
+    "(image width, item height) past one line: {dropped:?}"
+  );
+}

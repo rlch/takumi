@@ -2270,12 +2270,8 @@ impl RenderNode {
         &self.context,
         InlineLayoutMode::Measure,
       );
-      let options = InlineMeasureOptions::new(
-        request.max_width,
-        font_style.parent.resolved_text_wrap_mode() == TextWrapMode::Wrap,
-        available_space,
-        known_dimensions,
-      );
+      let options =
+        InlineMeasureOptions::new(request.max_width, available_space, known_dimensions);
 
       return create_inline_layout(request).measure(options).size;
     }

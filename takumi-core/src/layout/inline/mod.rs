@@ -305,7 +305,6 @@ impl BuiltInlineLayout<'_> {
   pub(crate) fn measure(&self, options: InlineMeasureOptions) -> InlineMeasurement {
     let InlineMeasureOptions {
       max_width,
-      ceil_width,
       min_content_query,
     } = options;
     let max_run_width = self
@@ -341,11 +340,9 @@ impl BuiltInlineLayout<'_> {
       .map(|inline_box| inline_box.y + inline_box.height)
       .fold(0.0, f32::max);
 
-    let measured_width = if ceil_width {
-      layout_unit_ceil(max_run_width.max(float_box_width))
-    } else {
-      max_run_width.max(float_box_width)
-    };
+    // Blink holds a measured inline size as a LayoutUnit rounded up (`LayoutUnit::FromFloatCeil`),
+    // so a box laid out at the width it measured holds its content in every wrap mode.
+    let measured_width = layout_unit_ceil(max_run_width.max(float_box_width));
 
     // Blink's fit-content width, `max(min-content, min(max-content, available))`: lines that wrapped
     // mean the content is wider than `max_width`, and the widest of them past it is a word no
@@ -478,7 +475,6 @@ pub struct InlineMeasurement {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct InlineMeasureOptions {
   max_width: f32,
-  ceil_width: bool,
   /// A min-content query wraps at every opportunity, so the width it wrapped against neither caps
   /// the answer nor counts the spaces that pushed the breaks.
   pub(crate) min_content_query: bool,
@@ -488,13 +484,11 @@ impl InlineMeasureOptions {
   /// Options for measuring against `max_width` under taffy's constraint.
   pub(crate) fn new(
     max_width: f32,
-    ceil_width: bool,
     available_space: Size<AvailableSpace>,
     known_dimensions: Size<Option<f32>>,
   ) -> Self {
     Self {
       max_width,
-      ceil_width,
       min_content_query: known_dimensions.width.is_none()
         && matches!(available_space.width, AvailableSpace::MinContent),
     }

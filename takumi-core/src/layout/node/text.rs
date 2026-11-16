@@ -68,7 +68,7 @@ impl TextData {
   ) -> InlineMeasurement {
     let (max_width, max_height) =
       create_inline_constraint(context, available_space, known_dimensions);
-    let options = InlineMeasureOptions::new(max_width, true, available_space, known_dimensions);
+    let options = InlineMeasureOptions::new(max_width, available_space, known_dimensions);
     let key = self.measure_key(context, max_width, max_height, options.min_content_query);
 
     context.inline_cache().get_or_measure(key, || {
