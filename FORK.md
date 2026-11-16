@@ -63,7 +63,11 @@ merged. Every fix here is meant to go upstream; drop its commit once it lands.
   is laid out at its measured width, and the insets came off it in f32, so its
   content box could come out an ulp short and wrap (a formula image in 0.04em
   padding dropped a line, and its row's baseline with it). The constraint is a
-  LayoutUnit now, as Blink's available inline size is.
+  LayoutUnit now, as Blink's available inline size is; and a box's measured
+  inline content width is rounded up to a LayoutUnit in every wrap mode, as
+  Blink's `LayoutUnit::FromFloatCeil` does, so the snapped constraint never
+  comes out under it (a nowrap flex item holding an image whose width rounded
+  down took a second line, doubled its height and drew its image too high).
 - **takumi-pdf's wasm is built for speed** (`takumi-pdf-js/speed.toml`): the
   release profile's size overrides on the PDF graph go back to opt-level 3 for
   this build only, and the release builds std without `optimize_for_size`.
