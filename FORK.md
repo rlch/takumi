@@ -68,6 +68,18 @@ merged. Every fix here is meant to go upstream; drop its commit once it lands.
   Blink's `LayoutUnit::FromFloatCeil` does, so the snapped constraint never
   comes out under it (a nowrap flex item holding an image whose width rounded
   down took a second line, doubled its height and drew its image too high).
+- **An inline box breaks the line after it only under its own wrap mode**
+  (`vendor/parley`, patched in over parley 0.11.1; `takumi-core`,
+  `layout/inline/mod.rs`): parley 0.11 marked a break after every inline box
+  and broke after one too wide for its line, reading the wrap mode only from
+  text, so a nowrap formula wider than a narrow box pushed the text after it
+  onto the next line. A box now carries its wrap mode: the item before it
+  decides the break before it and its own the break after, as Blink's
+  `CanBreakAfterAtomicInline` reads `auto_wrap_` from the item's style; a
+  span's padding is no break opportunity. Upstream parley has since made an
+  inline box a U+FFFC atom that line-breaks as text (`line_break.rs`), and
+  upstream takumi breaks lines with a port of Blink's
+  (`layout/inline/line_breaker.rs`); drop the vendored parley with either.
 - **takumi-pdf's wasm is built for speed** (`takumi-pdf-js/speed.toml`): the
   release profile's size overrides on the PDF graph go back to opt-level 3 for
   this build only, and the release builds std without `optimize_for_size`.
