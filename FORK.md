@@ -68,6 +68,14 @@ merged. Every fix here is meant to go upstream; drop its commit once it lands.
   Blink's `LayoutUnit::FromFloatCeil` does, so the snapped constraint never
   comes out under it (a nowrap flex item holding an image whose width rounded
   down took a second line, doubled its height and drew its image too high).
+- **A repeated gradient with a translucent stop keeps its colour**
+  (`takumi-pdf`, `emitter.rs`; vendored krilla, `content.rs`, `surface.rs`): a
+  background tile's shading pattern resolves against the page's space, so its
+  matrix carried the tile's space; the soft mask that holds the stops' alpha
+  took the same matrix but draws inside the tile, so it landed at 0.75x the
+  shading and the `transparent` stop's black showed (a whiteboard's dot grid
+  printed black). The tile's surface now carries that space, which only a
+  shading pattern's matrix takes.
 - **An inline box breaks the line after it only under its own wrap mode**
   (`vendor/parley`, patched in over parley 0.11.1; `takumi-core`,
   `layout/inline/mod.rs`): parley 0.11 marked a break after every inline box
