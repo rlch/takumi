@@ -49,6 +49,11 @@ pub(crate) struct ContentBuilder {
   content: Content,
   validation_errors: HashSet<ValidationError>,
   root_transform: Transform,
+  /// The space a shading pattern's matrix resolves against, over the stream's own: a tiling
+  /// pattern's stream draws in its tile's space, but a viewer resolves a shading pattern used
+  /// there against the space the tiling pattern is used in. Only the shading's pattern matrix
+  /// takes it; its soft mask draws in the stream itself.
+  pattern_space: Transform,
   graphics_states: GraphicsStates,
   bbox: Option<Rect>,
   uses_mask: bool,
@@ -81,6 +86,7 @@ impl ContentBuilder {
       validation_errors: HashSet::new(),
       content: sc.new_content(),
       root_transform,
+      pattern_space: Transform::identity(),
       uses_mask: false,
       bbox_important,
       graphics_states: GraphicsStates::new(),
@@ -166,6 +172,14 @@ impl ContentBuilder {
 
   pub(crate) fn concat_transform(&mut self, transform: &Transform) {
     self.graphics_states.transform(*transform);
+  }
+
+  pub(crate) fn pattern_space(&self) -> Transform {
+    self.pattern_space
+  }
+
+  pub(crate) fn set_pattern_space(&mut self, pattern_space: Transform) {
+    self.pattern_space = pattern_space;
   }
 
   fn cur_transform_with_root_transform(&self) -> Transform {
@@ -1066,7 +1080,8 @@ impl ContentBuilder {
         let shading_pattern = ShadingPattern::new(
           gradient_props,
           content_builder
-            .cur_transform_with_root_transform()
+            .pattern_space
+            .pre_concat(content_builder.cur_transform_with_root_transform())
             .pre_concat(transform),
         );
         let color_space = content_builder

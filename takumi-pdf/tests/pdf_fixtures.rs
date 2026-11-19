@@ -1463,6 +1463,27 @@ fn image_object_fit() {
   });
 }
 
+/// A repeated radial gradient fading to `transparent` keeps its colour: the soft mask that
+/// carries the stops' alpha draws where the tile's shading does, at the tile's centre, so
+/// the transparent stop's black never shows through.
+#[test]
+fn tiled_radial_gradient_with_alpha() {
+  let pdf = run_pdf_fixture("tiled-radial-gradient-alpha", |fonts| {
+    let source = r##"<div style="width: 100%; height: 100%; background-color: #ffffff; background-image: radial-gradient(circle, #832ec5 10px, transparent 15px); background-size: 100px 60px"></div>"##;
+
+    PdfOptions::builder()
+      .node(from_html(source, FromHtmlOptions::default()).expect("parse dots fixture"))
+      .viewport(Viewport::new((200, 120)))
+      .fonts(fonts)
+      .build()
+  });
+
+  assert!(
+    inflated_text(&pdf).contains("1 0 0 1 50 30 cm/s0 sh"),
+    "the tile's soft mask is not centred on the tile, where its shading is"
+  );
+}
+
 /// An SVG logo (gradient circle + stroked check) embeds as vector paths and
 /// shading patterns, never as a rasterized image XObject.
 #[test]

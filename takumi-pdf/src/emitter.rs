@@ -401,7 +401,6 @@ impl Emitter<'_> {
         tiling.tile,
         origin + CorePoint { x: *x, y: *y },
         surface,
-        Transform::identity(),
       );
       if clipped {
         surface.pop();
@@ -410,7 +409,8 @@ impl Emitter<'_> {
     }
 
     let stream = draw_stream(surface, |tile| {
-      self.background_layer(image, node, tiling.tile, CorePoint::ZERO, tile, tile_space);
+      tile.set_pattern_space(tile_space);
+      self.background_layer(image, node, tiling.tile, CorePoint::ZERO, tile);
     });
     let step = tiling.step();
 
@@ -435,7 +435,6 @@ impl Emitter<'_> {
     size: Size<f32>,
     at: CorePoint<f32>,
     surface: &mut Surface,
-    pattern_space: Transform,
   ) {
     let (w, h) = (size.width, size.height);
 
@@ -461,7 +460,7 @@ impl Emitter<'_> {
       surface.pop();
       return;
     }
-    let Some(paint) = self.gradient_paint(image, node, size, at, pattern_space) else {
+    let Some(paint) = self.gradient_paint(image, node, size, at) else {
       return;
     };
     let Some(path) = KrillaRect::from_xywh(at.x, at.y, w, h).and_then(rect_path) else {
@@ -479,16 +478,14 @@ impl Emitter<'_> {
   /// The krilla paint of one gradient layer, its geometry anchored at `(x, y)`
   /// with `size` as the tile. `None` for layers that are not gradients.
   ///
-  /// PDF 32000-1 8.7.3.1 resolves a pattern matrix against the default space of the stream the
-  /// pattern is used in, which a nested stream does not inherit; `pattern_space` carries what
-  /// krilla no longer composes.
+  /// Its transform is in the stream it fills; inside a tile, the tile's surface carries the space
+  /// a viewer resolves the shading's matrix against (`Surface::set_pattern_space`).
   fn gradient_paint(
     &self,
     image: &BackgroundImage,
     node: &RenderNode,
     size: Size<f32>,
     at: CorePoint<f32>,
-    pattern_space: Transform,
   ) -> Option<Paint> {
     let CorePoint { x, y } = at;
     let (w, h) = (size.width, size.height);
@@ -523,7 +520,7 @@ impl Emitter<'_> {
           y1,
           x2,
           y2,
-          transform: pattern_space,
+          transform: Transform::identity(),
           spread_method: spread(gradient.repeating),
           stops: krilla_stops(resolved, base, span),
           anti_alias: false,
@@ -558,14 +555,7 @@ impl Emitter<'_> {
           cx: 0.0,
           cy: 0.0,
           cr: extent,
-          transform: pattern_space.pre_concat(Transform::from_row(
-            scale_x,
-            0.0,
-            0.0,
-            scale_y,
-            x + cx,
-            y + cy,
-          )),
+          transform: Transform::from_row(scale_x, 0.0, 0.0, scale_y, x + cx, y + cy),
           spread_method: SpreadMethod::Pad,
           stops,
           anti_alias: false,
@@ -605,11 +595,7 @@ impl Emitter<'_> {
           cy: ccy,
           start_angle: 0.0,
           end_angle: 360.0,
-          transform: pattern_space.pre_concat(Transform::from_rotate_at(
-            tile.start_rad.to_degrees() - 90.0,
-            ccx,
-            ccy,
-          )),
+          transform: Transform::from_rotate_at(tile.start_rad.to_degrees() - 90.0, ccx, ccy),
           spread_method: SpreadMethod::Pad,
           stops,
           anti_alias: false,
@@ -1186,14 +1172,8 @@ impl Emitter<'_> {
       lone(dest.top, dest.bottom, tiling.tile.height, first_y)
     };
     let stream = draw_stream(surface, |inner| {
-      self.background_layer(
-        image,
-        node,
-        tiling.tile,
-        CorePoint::ZERO,
-        inner,
-        Transform::from_scale(PT_PER_PX, PT_PER_PX),
-      );
+      inner.set_pattern_space(Transform::from_scale(PT_PER_PX, PT_PER_PX));
+      self.background_layer(image, node, tiling.tile, CorePoint::ZERO, inner);
     });
 
     Some(

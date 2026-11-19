@@ -96,6 +96,20 @@ impl<'a> Surface<'a> {
     }
   }
 
+  /// Sets the space this stream's shading patterns resolve against (see
+  /// `ContentBuilder::pattern_space`); the groups pushed after it inherit it.
+  pub fn set_pattern_space(&mut self, pattern_space: Transform) {
+    self.bd.get_mut().set_pattern_space(pattern_space);
+  }
+
+  /// A builder for a group nested in the current stream, resolving patterns as it does.
+  fn sub_builder(&self) -> ContentBuilder {
+    let mut builder = ContentBuilder::new(Transform::identity(), true, self.sc);
+
+    builder.set_pattern_space(self.bd.get().pattern_space());
+    builder
+  }
+
   /// Return a `StreamBuilder` to allow drawing on a sub-context.
   pub fn stream_builder(&mut self) -> StreamBuilder<'_> {
     StreamBuilder::new(self.sc, self.chunk_container)
@@ -413,10 +427,7 @@ impl<'a> Surface<'a> {
     self
       .push_instructions
       .push(PushInstruction::Mask(Box::new(mask)));
-    self
-      .bd
-      .sub_builders
-      .push(ContentBuilder::new(Transform::identity(), true, self.sc));
+    self.bd.sub_builders.push(self.sub_builder());
   }
 
   /// Push a new opacity, meaning that each subsequent graphics object will be
@@ -430,20 +441,14 @@ impl<'a> Surface<'a> {
       .push(PushInstruction::Opacity(opacity));
 
     if opacity != NormalizedF32::ONE {
-      self
-        .bd
-        .sub_builders
-        .push(ContentBuilder::new(Transform::identity(), true, self.sc));
+      self.bd.sub_builders.push(self.sub_builder());
     }
   }
 
   /// Push a new isolated layer.
   pub fn push_isolated(&mut self) {
     self.push_instructions.push(PushInstruction::Isolated);
-    self
-      .bd
-      .sub_builders
-      .push(ContentBuilder::new(Transform::identity(), true, self.sc));
+    self.bd.sub_builders.push(self.sub_builder());
   }
 
   /// Pop the last `push` instruction.
